@@ -404,8 +404,6 @@ display:
           it.printf(x, y, id(pixolletta), COLOR_ON, TextAlign::CENTER, "%s", ip_addresses[0].str().c_str());
       - id: weather_page
         lambda: |-
-          int x = it.get_width() / 2;
-          int y = it.get_height() / 2;
           const char* icon;
           std::string weather_state = id(ha_weather_state).state;
 
