@@ -1,0 +1,16 @@
+input_number:
+  today_high_temp:
+    name: "Today's High Temperature"
+    min: -100
+    max: 200
+    step: 1
+  today_low_temp:
+    name: "Today's Low Temperature"
+    min: -100
+    max: 200
+    step: 1
+  today_rain_chance:
+    name: "Today's Rain Chance"
+    min: 0
+    max: 100
+    step: 1

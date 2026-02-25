@@ -1,0 +1,13 @@
+input_text:
+  next_hour_rain_description:
+    name: "Next Hour Rain Description"
+    icon: mdi:text
+    max: 255
+  rain_values:
+    name: "Rain Values"
+    icon: mdi:text
+    max: 255
+  today_precipitation_description:
+    name: "Today's Rain Description"
+    icon: mdi:text
+    max: 255

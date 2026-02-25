@@ -1,0 +1,221 @@
+esphome:
+  includes:
+    - std_includes.h
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_temperature
+    entity_id: weather.openweathermap
+    attribute: temperature
+  - platform: homeassistant
+    id: ha_rain_description
+    entity_id: input_text.next_hour_rain_description
+  - platform: homeassistant
+    id: ha_today_precipitation_description
+    entity_id: input_text.today_precipitation_description
+  - platform: homeassistant
+    id: ha_rain_values
+    entity_id: input_text.rain_values
+    filters:
+      - substitute: 
+        - "[ ->"
+        - "] ->"
+          
+  - platform: homeassistant
+    id: ha_weather_state
+    entity_id: weather.openweathermap
+    on_value: 
+      then:
+        - homeassistant.action: 
+            action: openweathermap.get_minute_forecast
+            data:
+              entity_id: weather.openweathermap
+
+number:
+  - platform: homeassistant
+    id: ha_today_high_temp
+    entity_id: input_number.today_high_temp
+  - platform: homeassistant
+    id: ha_today_low_temp
+    entity_id: input_number.today_low_temp
+  - platform: homeassistant
+    id: ha_today_rain_chance
+    entity_id: input_number.today_rain_chance
+
+sensor:
+  - platform: homeassistant
+    id: sun_elevation
+    entity_id: sun.sun
+    attribute: elevation
+  - platform: copy
+    source_id: sun_elevation
+    id: is_daytime
+    filters:
+      - lambda: |-
+          if(id(sun_elevation).state > 0) {
+            return true;
+          } else {
+            return false;
+          }
+
+display:
+  - platform: hub75
+    id: matrix
+    # ...
+    pages:
+      - id: weather_page
+        lambda: |-
+          int x = it.get_width() / 2;
+          int y = it.get_height() / 2;
+          const char* icon;
+          std::string weather_state = id(ha_weather_state).state;
+
+          if (weather_state == "sunny") {
+            icon = "\U000F0599";
+          } else if (weather_state == "partlycloudy" && id(is_daytime).state) {
+            icon = "\U000F0595";
+          } else if (weather_state == "partlycloudy") {
+            icon = "\U000F0F31";
+          } else if (weather_state == "cloudy") {
+            icon = "\U000F0590";
+          } else if (weather_state == "rainy") {
+            icon = "\U000F0597"; 
+          } else if (weather_state == "snowy") {
+            icon = "\U000F0598";
+          } else if (weather_state == "pouring") {
+            icon = "\U000F0596";          
+          } else if (weather_state == "lightning") {
+            icon = "\U000F0593";           
+          } else if (weather_state == "clear-night") {
+            icon = "\U000F0594";  
+          } else if (weather_state == "fog") {
+            icon = "\U000F0591";     
+          } else if (weather_state == "hail") {
+            icon = "\U000F0592";   
+          } else if (weather_state == "lightning-rainy") {
+            icon = "\U000F067E";                  
+          } else if (weather_state == "snowy-rainy") {
+            icon = "\U000F0F35";                    
+          } else if (weather_state == "windy") {
+            icon = "\U000F059D";       
+          } else if (weather_state == "windy-variant") {
+            icon = "\U000F059E";                                               
+          } else if (weather_state == "exceptional") {
+            icon = "\U000F0F2F";       
+          } else {                
+            icon = "\U000F0F2F";
+          }
+
+          if(id(ha_rain_description).state == "No rain") {
+            auto rain_text_color = COLOR_ON;
+            
+            if(id(ha_today_precipitation_description).state != "No rain today") {
+              rain_text_color = id(color_yellow);
+            }
+
+            it.printf(it.get_width(), it.get_height(), id(pixolletta), rain_text_color, TextAlign::BOTTOM_RIGHT, "%s", id(ha_today_precipitation_description).state.c_str());
+
+            auto now = id(sntp_time).now();
+            // Using this method to display non-padded hour since strtime doesn't support %-I
+            if (now.is_valid()) {
+              // Use printf to format the hour and minute as integers
+              it.printf(it.get_width(), 1, id(pixolletta20), COLOR_ON, TextAlign::TOP_RIGHT, "%d:%02d", now.hour, now.minute);
+            } else {
+              it.print(0, 0, id(pixolletta), COLOR_ON, TextAlign::TOP_RIGHT, "Invalid Time");
+            }
+          } else {
+            int graphX = 65;
+            std::string list_data = id(ha_rain_values).state;
+
+            // Draw graph boarders
+            int x_left = graphX - 1;
+            int x_right = graphX + 60;
+            int y_top = 1;
+            int y_bottom = it.get_height() - 13;
+            it.line(x_left, y_bottom, x_right, y_bottom); // BOTTOM
+            it.line(x_left, y_bottom, x_left, y_top); // LEFT
+            it.line(x_left, y_top, x_right, y_top); // TOP
+            it.line(x_right, y_top, x_right, y_bottom); // RIGHT
+
+            // Simple comma-separated parsing example
+            std::istringstream ss(list_data);
+            std::string item;
+            while (std::getline(ss, item, ',')) {
+              int num = std::stoi(item);
+              if(num > 0) {
+                // Scale up value for graph size
+                num *= 2;
+                if(num > 16) {
+                  num = 16;
+                }
+                it.line(graphX, it.get_height() - 14, graphX, it.get_height() - num - 14, id(color_blue));
+              }
+
+              graphX++;
+            }
+            it.printf(it.get_width(), it.get_height(), id(pixolletta), id(color_red), TextAlign::BOTTOM_RIGHT, "%s", id(ha_rain_description).state.c_str());
+          }
+
+          it.printf(2, 0, id(icon_font), COLOR_ON, TextAlign::TOP_LEFT, "%s", icon);
+          it.printf(5, it.get_height(), id(pixolletta), COLOR_ON, TextAlign::BOTTOM_LEFT, "%s°", id(ha_temperature).state.c_str());
+
+          it.printf(28, y - 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "H: %.0f°", id(ha_today_high_temp).state);
+          it.printf(28, y + 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "L: %.0f°", id(ha_today_low_temp).state);
+
+font:
+  - file: "fonts/Pixolletta8px.ttf"
+    id: pixolletta
+    size: 10
+    glyphs:
+      - abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:;!?()"'-+/*=%@#[]{}<>|&^~
+      - ÄËÏÖÜÉÈÔäëïöüéèôŊŋÁÊÎÛÝáêîûýĜĝÀÌÒàìòÑñÍÓÚíóúÇçĆČĐŠŽćčđšžÙùÕõŞŁŇŘşłňřÅåØøĀĒĪŌŪāēīōūÂâĞğıĎĚŤŮďěťůÆæĲĳŒœÐðŸÿßŐŰőűÞþÃãĂĔĬŎŬăĕĭŏŭĨŨĩũĄĘŃŚŻąęńśżĖėĢĶĻŅģķļņĮŲįųŔŹŕźĊĠċġħŜŝŢţŦŧŴŵŶŷĹĽĺľİ
+      - " "
+      - °
+
+  - file: "fonts/Pixolletta8px.ttf"
+    id: pixolletta20
+    size: 20
+    glyphs:
+      - abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:;!?()"'-+/*=%@#[]{}<>|&^~
+      - ÄËÏÖÜÉÈÔäëïöüéèôŊŋÁÊÎÛÝáêîûýĜĝÀÌÒàìòÑñÍÓÚíóúÇçĆČĐŠŽćčđšžÙùÕõŞŁŇŘşłňřÅåØøĀĒĪŌŪāēīōūÂâĞğıĎĚŤŮďěťůÆæĲĳŒœÐðŸÿßŐŰőűÞþÃãĂĔĬŎŬăĕĭŏŭĨŨĩũĄĘŃŚŻąęńśżĖėĢĶĻŅģķļņĮŲįųŔŹŕźĊĠċġħŜŝŢţŦŧŴŵŶŷĹĽĺľİ
+      - " "
+      - °
+
+  - file: "fonts/MaterialDesignIconsDesktop.ttf"
+    id: icon_font
+    size: 20
+    glyphs: 
+      - "\U000F0590" # weather-cloudy
+      - "\U000F0591" # weather-fog
+      - "\U000F0592" # weather-hail     
+      - "\U000F0593" # weather-lightning
+      - "\U000F0594" # weather-clear-night
+      - "\U000F0595" # weather-partly-cloudy
+      - "\U000F0596" # weather-pouring
+      - "\U000F0597" # weather-rainy
+      - "\U000F0598" # weather-snowy
+      - "\U000F0599" # weather-sunny
+      - "\U000F0F30" # weather-hazy
+      - "\U000F0F31" # weather-night-partly-cloudy
+      - "\U000F0F32" # weather-partly-lightning
+      - "\U000F0F33" # weather-partly-rainy
+      - "\U000F0F34" # weather-partly-snowy
+      - "\U000F0F35" # weather-partly-snowy-rainy
+      - "\U000F0F36" # weather-snowy-heavy
+      - "\U000F059D" # weather-windy
+      - "\U000F067E" # weather-lightning-rainy
+      - "\U000F059E" # weather-windy-variant
+      - "\U000F0F2F" # weather-exceptional 
+
+color:
+  - id: color_red
+    red: 100%
+  - id: color_blue
+    blue: 100%
+  - id: color_yellow
+    hex: FFFF00
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: America/Los_Angeles

@@ -1,0 +1,156 @@
+blueprint:
+  name: "OpenWeatherMap Waveshare Display Helper"
+  description: >
+    # OpenWeatherMap Waveshare Display Helper
+
+    **v0.1**
+
+    Uses the OpenWeatherMap OneCall v3 integration to provide high/low temp and rain data for use by a Waveshare display board ESPHome device.
+
+    REQUIREMENT FOR USE:
+    Due to current limitations with blueprints, you must include the input_text.yaml and input_number.yaml in your configuration.yaml ahead of time.
+    You should also disable "Enable polling for changes" on the OpenWeatherMap service to ensure you don't go over your API limits.
+  domain: automation
+  homeassistant:
+    min_version: "2026.2.3"
+  input:
+    openweathermap_entity:
+      name: OpenWeatherMap Entity
+      description: The OpenWeatherMap entity for the location you wish to track
+      selector:
+        entity:
+          filter:
+            - domain: weather
+              integration: openweathermap
+    polling_frequency:
+      name: Polling Frequency
+      description: >
+        Number of minutes between polling the OpenWeatherMap API (e.g.: '/7')
+        Note: setting this number to /1 will result in 1,440 calls per day, which is over the free limit
+      default: "/5"
+      selector:
+        text:
+    detection_static:
+      name: Rain rate detection threshold
+      description: Any detected precipitation rate above the threshold will get reported, otherwise it's zeroed out.
+      icon: mdi:minus
+      collapsed: true
+      input:
+        threshold_rate:
+          name: Precipitation rate
+          description: Rate above which precipitation is detected.
+          default: 0.1
+          selector:
+            number:
+              min: 0.0
+              max: 10
+              step: 0.1
+              unit_of_measurement: mm/h
+alias: "OpenWeatherMap Minute Forecast Notification"
+triggers:
+  - trigger: time_pattern
+    minutes: !input polling_frequency
+conditions: []
+actions:
+  - action: homeassistant.update_entity
+    metadata: {}
+    data:
+      entity_id:
+        - !input openweathermap_entity
+  - action: openweathermap.get_minute_forecast
+    target:
+      entity_id: !input openweathermap_entity
+    response_variable: forecast_data
+    data: {}
+  - action: weather.get_forecasts
+    target:
+      entity_id: !input openweathermap_entity
+    data:
+      type: daily
+    response_variable: daily_forecasts
+  - action: weather.get_forecasts
+    target:
+      entity_id: !input openweathermap_entity
+    data:
+      type: hourly
+    response_variable: hourly_forecasts
+  - variables:
+      threshold: !input threshold_rate
+      
+      # Do 5 min buckets for threshold detection
+      next_hour_precipitation: >
+        {% set rain_data = forecast_data['weather.openweathermap'].forecast %}
+        {% set precipitation = (rain_data[:60] | map(attribute='precipitation') | map('float') | map('round', 1) | list) %}
+
+        {%- set batch_num = 5 -%}
+        {%- for values in precipitation | batch(batch_num) -%}
+          {% set total_sum = values|sum -%}
+          {% set batch_length = values|length -%}
+          {% set average = total_sum / batch_length -%}
+          {% if average > threshold -%}
+            {{ values | join(',') -}}{{ "," if not loop.last -}}
+          {% else -%}
+            {{ "0," * batch_length }}
+          {%- endif -%}
+        {%- endfor -%}
+
+      today_high_temp: >
+        {{ daily_forecasts['weather.openweathermap'].forecast[0].temperature | int}}
+
+      today_low_temp: >
+        {{ daily_forecasts['weather.openweathermap'].forecast[0].templow | int}}
+
+      today_rain_chance: >
+        {{ daily_forecasts['weather.openweathermap'].forecast[0].precipitation_probability | int }}
+
+      next_hour_precipitation_description: >
+        {% set non_zero_rain = next_hour_precipitation | list | reject("==", 0) |  list %}
+        {% if non_zero_rain | length == 0 -%}
+        No rain
+        {% elif (next_hour_precipitation | list)[0] != 0 -%}
+        Rain ending in {{ next_hour_precipitation.index(0) }}
+        {% elif (next_hour_precipitation | list)[0] == 0 -%}
+        Rain starting in {{ next_hour_precipitation.index(non_zero_rain[0]) }}
+        {% endif -%}
+
+      today_precipitation_description: >
+        {%- set forecasts = hourly_forecasts['weather.openweathermap'].forecast -%}
+
+        {%- set rain_today = forecasts | selectattr('precipitation', 'gt', threshold) | first | default("No") -%}
+        {%- if rain_today == "No" -%}
+        No rain today
+        {%- else -%}
+        Rain at {{ rain_today['datetime'] | as_timestamp | timestamp_custom('%I%p', true) }}
+        {%- endif -%}
+
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.rain_values
+    data:
+      value: "{{ next_hour_precipitation }}"
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.next_hour_rain_description
+    data:
+      value: "{{ next_hour_precipitation_description }}"
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.today_high_temp
+    data:
+      value: "{{ today_high_temp }}"
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.today_low_temp
+    data:
+      value:  "{{ today_low_temp }}"
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.today_rain_chance
+    data:
+      value: "{{ today_rain_chance }}"
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.today_precipitation_description
+    data:
+      value: "{{ today_precipitation_description }}"      
+mode: single
