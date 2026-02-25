@@ -1,6 +1,6 @@
 # ESPHome Weather Display Board
 
-Inspired by [Transit Tracker](https://transit-tracker.eastsideurbanism.org) project, this extends it's functionality by adding a display page showing important weather information for your travels that day.
+Inspired by the [Transit Tracker](https://transit-tracker.eastsideurbanism.org) project, this extends it's functionality by adding a display page showing important weather information for your travels that day.
 
 ![Example of the rain graph](images/rain_graph.jpg)
 ![Example of the future rain](images/future_rain.jpg)
@@ -14,7 +14,7 @@ Inspired by [Transit Tracker](https://transit-tracker.eastsideurbanism.org) proj
 ## Home Assistant Setup
 Due to current limitations in Home Assistant, there's a few steps you must take.
 First add [ha/input_number.yaml](ha/input_number.yaml) and [ha/input_text.yaml](ha/input_text.yaml) to your Home Assistant's `configuration.yaml` and reload your yamls. These will add the intermediary helpers used by the Blueprint and the ESPHome firmware.
-Next import the [ha/openweatherblueprint.yaml](ha/openweatherblueprint.yaml) into Home Assistant.
+Next import the [ha/openweatherblueprint.yaml](ha/openweatherblueprint.yaml) Blueprint into Home Assistant.
 If everything is setup correctly, you should see a few entries under the Helpers tab such as `next_hour_rain_description` and `today_high_temp` which will be populated with current values.
 
 ## ESPHome Setup
