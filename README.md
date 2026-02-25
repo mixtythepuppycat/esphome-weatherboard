@@ -2,7 +2,8 @@
 
 Inspired by [Transit Tracker](https://transit-tracker.eastsideurbanism.org) project, this extends it's functionality by adding a display page showing important weather information for your travels that day.
 
-ADD SCREENSHOT EXAMPLE!!!!!!!!!!!!!!!
+![Example of the rain graph](images/rain_graph.jpg)
+![Example of the future rain](images/future_rain.jpg)
 
 ## Requirements
 - A built display board. See Transit Tracker's excellent [build guide](https://transit-tracker.eastsideurbanism.org/docs/build-guide)
@@ -18,4 +19,4 @@ If everything is setup correctly, you should see a few entries under the Helpers
 
 ## ESPHome Setup
 If you're adding this to an existing ESPHome firmware, look at [weatherboard_example.yaml](weatherboard_example.yaml) for what to merge into your existing yaml.  
-If you plan on using this with Transit Tracker, look at [transit_weatherboard_example.yaml](transit_weatherboard_example.yaml) for a near complete firmware yaml based on v2.7.1. You'll just need to add a `secrets.yaml` with your wifi information and the `transit_tracker` yaml blob from the Transit Tracker [configurator](https://transit-tracker.eastsideurbanism.org/configurator)
+If you plan on using this with Transit Tracker, look at [transit_weatherboard_example.yaml](transit_weatherboard_example.yaml) for a near complete firmware yaml based on v2.7.1. You'll just need to add a `secrets.yaml` with your wifi information and the `transit_tracker` yaml blob from the Transit Tracker [configurator](https://transit-tracker.eastsideurbanism.org/configurator). You can then control what is being displayed with the button controls in Home Assistant.
