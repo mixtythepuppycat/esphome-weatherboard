@@ -108,9 +108,9 @@ actions:
         {% if non_zero_rain | length == 0 -%}
         No rain
         {% elif (next_hour_precipitation | list)[0] != 0 -%}
-        Rain ending in {{ next_hour_precipitation.index(0) }}
+        Ending in {{ next_hour_precipitation.index(0) }}
         {% elif (next_hour_precipitation | list)[0] == 0 -%}
-        Rain starting in {{ next_hour_precipitation.index(non_zero_rain[0]) }}
+        Rain in {{ next_hour_precipitation.index(non_zero_rain[0]) }}
         {% endif -%}
 
       today_precipitation_description: >
