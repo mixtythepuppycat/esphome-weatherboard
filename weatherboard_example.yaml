@@ -65,8 +65,6 @@ display:
     pages:
       - id: weather_page
         lambda: |-
-          int x = it.get_width() / 2;
-          int y = it.get_height() / 2;
           const char* icon;
           std::string weather_state = id(ha_weather_state).state;
 
