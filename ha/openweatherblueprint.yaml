@@ -116,7 +116,7 @@ actions:
       today_precipitation_description: >
         {%- set forecasts = hourly_forecasts['weather.openweathermap'].forecast -%}
 
-        {%- set rain_today = forecasts | selectattr('precipitation', 'gt', threshold) | first | default("No") -%}
+        {%- set rain_today = forecasts[:24] | selectattr('precipitation', 'gt', threshold) | first | default("No") -%}
         {%- if rain_today == "No" -%}
         No rain today
         {%- else -%}
