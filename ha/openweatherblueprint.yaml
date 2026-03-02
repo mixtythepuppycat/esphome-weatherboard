@@ -120,7 +120,7 @@ actions:
         {%- if rain_today == "No" -%}
         No rain today
         {%- else -%}
-        Rain at {{ rain_today['datetime'] | as_timestamp | timestamp_custom('%-H:00', true) }}
+        Rain at {{ rain_today['datetime'] | as_timestamp | timestamp_custom('%H:00', true) }}
         {%- endif -%}
 
   - action: input_text.set_value
