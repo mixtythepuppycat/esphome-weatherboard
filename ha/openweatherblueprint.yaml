@@ -3,7 +3,7 @@ blueprint:
   description: >
     # OpenWeatherMap Waveshare Display Helper
 
-    **v0.1**
+    **v0.2**
 
     Uses the OpenWeatherMap OneCall v3 integration to provide high/low temp and rain data for use by a Waveshare display board ESPHome device.
 
@@ -23,30 +23,45 @@ blueprint:
             - domain: weather
               integration: openweathermap
     polling_frequency:
-      name: Polling Frequency
+      name: OpenWeather Polling Frequency
       description: >
         Number of minutes between polling the OpenWeatherMap API (e.g.: '/7')
         Note: setting this number to /1 will result in 1,440 calls per day, which is over the free limit
       default: "/5"
       selector:
         text:
+    graph_scaling:
+      name: Graph scaling
+      description: Scale the graph up or down to better fit your graph area
+      icon: mdi:minus
+      collapsed: false
+      input:
+        graph_multi:
+          name: Graph Scale
+          description: Value to multiple rain values by
+          default: 1
+          selector:
+            number:
+              min: 0.1
+              max: 10
+              step: 0.1
     detection_static:
       name: Rain rate detection threshold
       description: Any detected precipitation rate above the threshold will get reported, otherwise it's zeroed out.
       icon: mdi:minus
-      collapsed: true
+      collapsed: false
       input:
         threshold_rate:
           name: Precipitation rate
-          description: Rate above which precipitation is detected.
-          default: 0.1
+          description: Rate above which precipitation is reported.
+          default: 0.0
           selector:
             number:
               min: 0.0
               max: 10
               step: 0.1
               unit_of_measurement: mm/h
-alias: "OpenWeatherMap Minute Forecast Notification"
+alias: "OpenWeatherMap Waveshare Display Helper"
 triggers:
   - trigger: time_pattern
     minutes: !input polling_frequency
@@ -76,6 +91,7 @@ actions:
     response_variable: hourly_forecasts
   - variables:
       threshold: !input threshold_rate
+      graph_multi_scale: !input graph_multi
       
       # Do 5 min buckets for threshold detection
       next_hour_precipitation: >
@@ -88,7 +104,7 @@ actions:
           {% set batch_length = values|length -%}
           {% set average = total_sum / batch_length -%}
           {% if average > threshold -%}
-            {{ values | join(',') -}}{{ "," if not loop.last -}}
+            {{ values | map('multiply', graph_multi_scale) | map('round', method='ceil') |  join(',') -}}{{ "," if not loop.last -}}
           {% else -%}
             {{ "0," * batch_length }}
           {%- endif -%}

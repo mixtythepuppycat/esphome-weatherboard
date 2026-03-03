@@ -474,18 +474,21 @@ display:
             it.line(x_left, y_top, x_right, y_top); // TOP
             it.line(x_right, y_top, x_right, y_bottom); // RIGHT
 
-            // Simple comma-separated parsing example
+            // Fixed graph data line values
+            int line_bottom = y_bottom - 1;
+            int line_max_height = 16;
+
+            // Simple comma-separated parsing of rain data
             std::istringstream ss(list_data);
             std::string item;
+
             while (std::getline(ss, item, ',')) {
               int num = std::stoi(item);
+
               if(num > 0) {
-                // Scale up value for graph size
-                num *= 2;
-                if(num > 16) {
-                  num = 16;
-                }
-                it.line(graphX, it.get_height() - 14, graphX, it.get_height() - num - 14, id(color_blue));
+                if (num > line_max_height) {num = line_max_height;}
+                int line_size = line_bottom - num + 1;
+                it.line(graphX, line_bottom, graphX, line_size, id(color_blue));
               }
 
               graphX++;
