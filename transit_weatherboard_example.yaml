@@ -5,7 +5,7 @@ esphome:
   name: transit-tracker
   friendly_name: Transit Tracker + Weatherboard
   name_add_mac_suffix: true
-  min_version: 2026.1.4
+  min_version: 2026.2.3
   project:
     name: "Eastside Urbanism.Transit Tracker + Weatherboard"
     version: ${project_version}
@@ -24,7 +24,7 @@ external_components:
     refresh: 1h
   - source: github://tjhorner/esphome-custom-components@c57ffd46fcf30badb2838421e8ff6cbeb9c1dd06
     components: [ serial_rpc, lis3dh, project_version ]
-  - source: github://tjhorner/esphome-transit-tracker@adfd74561039a859075f962cef06516e1a771427
+  - source: github://tjhorner/esphome-transit-tracker@7f63c8945ad42b2eaac03c5095d715f6e09794ab
     refresh: 0s
 
 logger:
