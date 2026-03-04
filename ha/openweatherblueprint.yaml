@@ -135,6 +135,8 @@ actions:
         {%- set rain_today = forecasts[:24] | selectattr('precipitation', 'gt', threshold) | first | default("No") -%}
         {%- if rain_today == "No" -%}
         No rain today
+        {%- elif now() > as_datetime(rain_today['datetime']) -%}
+        Rain this hour
         {%- else -%}
         Rain at {{ rain_today['datetime'] | as_timestamp | timestamp_custom('%H:00', true) }}
         {%- endif -%}
