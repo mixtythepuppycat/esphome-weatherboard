@@ -132,18 +132,18 @@ actions:
       today_precipitation_description: >
         {%- set forecasts = hourly_forecasts['weather.openweathermap'].forecast -%}
         {%- set rain_states = ['rainy', 'pouring', 'hail', 'lightning-rainy', 'snowy-rainy'] -%}
-        {%- set rain_today = forecasts[:24] | selectattr('condition', 'in', rain_states) | first | default("No") -%}
+        {%- set rain_today = forecasts[:24] | selectattr('precipitation', 'gt', threshold) | selectattr('condition', 'in', rain_states) | first | default("No") -%}
         
-        {%- if rain_today == "No" -%} 
+        {%- if rain_today == "No" or as_datetime(rain_today['datetime']) > today_at("23:59") -%} 
         No rain today
         {%- else -%}
-        {%- if rain_today['condition'] in ['rainy', 'snowy-rainy'] %}
-        Rain 
-        {% elif rain_today['condition'] in ['pouring', 'hail', 'lightning-rainy'] %}
-        Storm 
+        {%- if rain_today['condition'] in ['rainy', 'snowy-rainy'] -%}
+        Rain
+        {% elif rain_today['condition'] in ['pouring', 'hail', 'lightning-rainy'] -%}
+        Storm
         {% endif -%}
         {%- if now() > as_datetime(rain_today['datetime']) -%}
-        this hour 
+        this hour
         {%- else -%}  
         at {{ rain_today['datetime'] | as_timestamp | timestamp_custom('%H:00', true) }} 
         {%- endif -%}
