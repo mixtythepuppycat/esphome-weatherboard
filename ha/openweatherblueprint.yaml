@@ -139,9 +139,9 @@ actions:
         {%- else -%}
         {%- if rain_today['condition'] in ['rainy', 'snowy-rainy'] %}
         Rain 
-        {%- elif rain_today['condition'] in ['pouring', 'hail', 'lightning-rainy'] %}
+        {% elif rain_today['condition'] in ['pouring', 'hail', 'lightning-rainy'] %}
         Storm 
-        {%- endif -%}
+        {% endif -%}
         {%- if now() > as_datetime(rain_today['datetime']) -%}
         this hour 
         {%- else -%}  
