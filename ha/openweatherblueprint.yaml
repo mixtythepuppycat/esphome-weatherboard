@@ -123,6 +123,8 @@ actions:
         {% set non_zero_rain = next_hour_precipitation | list | reject("==", 0) |  list %}
         {% if non_zero_rain | length == 0 -%}
         No rain
+        {% elif non_zero_rain | length == 60 -%}
+        Rain this hour
         {% elif (next_hour_precipitation | list)[0] != 0 -%}
         Ending in {{ next_hour_precipitation.index(0) }}
         {% elif (next_hour_precipitation | list)[0] == 0 -%}
