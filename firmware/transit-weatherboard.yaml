@@ -1,6 +1,12 @@
+
+# Transit Tracker Section
 packages:
   transit_tracker: github://EastsideUrbanism/transit-tracker/firmware/transit-tracker.yaml@main
 
+transit_tracker:
+  font_id: pixolletta
+
+# Weatherboard Section
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
@@ -246,5 +252,3 @@ color:
   - id: color_yellow
     hex: FFFF00
 
-transit_tracker:
-  font_id: pixolletta
