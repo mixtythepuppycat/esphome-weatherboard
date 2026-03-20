@@ -7,7 +7,7 @@ wifi:
 
 esphome:
   includes:
-    - std_includes.h
+    - <sstream>
 
 switch:
 - platform: template
