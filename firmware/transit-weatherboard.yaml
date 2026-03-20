@@ -9,6 +9,26 @@ esphome:
   includes:
     - std_includes.h
 
+switch:
+- platform: template
+  name: "Display Weather"
+  id: weather_display_switch
+  lambda: |-
+    return id(matrix).get_active_page() == id(weather_page);
+  turn_on_action:
+    - display.page.show: weather_page
+  turn_off_action:
+    - display.page.show: weather_page
+- platform: template
+  name: "Display Transit"
+  id: transit_display_switch
+  lambda: |-
+    return id(matrix).get_active_page() == id(transit_schedule);
+  turn_on_action:
+    - display.page.show: transit_schedule
+  turn_off_action:
+    - display.page.show: transit_schedule
+
 text_sensor:
   - platform: homeassistant
     id: ha_temperature
@@ -71,6 +91,8 @@ display:
     pages:
       - id: weather_page
         lambda: |-
+          int x = it.get_width() / 2;
+          int y = it.get_height() / 2;
           const char* icon;
           std::string weather_state = id(ha_weather_state).state;
 
@@ -160,13 +182,13 @@ display:
 
               graphX++;
             }
+
             it.printf(it.get_width(), it.get_height(), id(pixolletta), id(color_red), TextAlign::BOTTOM_RIGHT, "%s", id(ha_rain_description).state.c_str());
           }
 
           it.printf(2, 0, id(icon_font), COLOR_ON, TextAlign::TOP_LEFT, "%s", icon);
           it.printf(5, it.get_height(), id(pixolletta), COLOR_ON, TextAlign::BOTTOM_LEFT, "%s°", id(ha_temperature).state.c_str());
 
-          int y = it.get_height() / 2;
           it.printf(28, y - 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "H: %.0f°", id(ha_today_high_temp).state);
           it.printf(28, y + 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "L: %.0f°", id(ha_today_low_temp).state);
 
