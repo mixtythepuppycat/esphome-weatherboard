@@ -193,7 +193,7 @@ display:
           it.printf(28, y + 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "L: %.0f°", id(ha_today_low_temp).state);
 
 font:
-  - file: "fonts/Pixolletta8px.ttf"
+  - file: github://EastsideUrbanism/transit-tracker/firmware/fonts/Pixolletta8px.ttf@main
     id: pixolletta20
     size: 20
     glyphs:
@@ -202,7 +202,7 @@ font:
       - " "
       - °
 
-  - file: "fonts/MaterialDesignIconsDesktop.ttf"
+  - file: github://mixtythepuppycat/esphome-weatherboard/fonts/MaterialDesignIconsDesktop.ttf@main
     id: icon_font
     size: 20
     glyphs: 
