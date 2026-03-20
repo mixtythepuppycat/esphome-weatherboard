@@ -208,6 +208,7 @@ font:
       - abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:;!?()"'-+/*=%@#[]{}<>|&^~
       - ÄËÏÖÜÉÈÔäëïöüéèôŊŋÁÊÎÛÝáêîûýĜĝÀÌÒàìòÑñÍÓÚíóúÇçĆČĐŠŽćčđšžÙùÕõŞŁŇŘşłňřÅåØøĀĒĪŌŪāēīōūÂâĞğıĎĚŤŮďěťůÆæĲĳŒœÐðŸÿßŐŰőűÞþÃãĂĔĬŎŬăĕĭŏŭĨŨĩũĄĘŃŚŻąęńśżĖėĢĶĻŅģķļņĮŲįųŔŹŕźĊĠċġħŜŝŢţŦŧŴŵŶŷĹĽĺľİ
       - " "
+      - °
 
   - file: "https://github.com/EastsideUrbanism/transit-tracker/raw/f8e71bd1855d47f7d07b38fdbe8c8ac974911955/firmware/fonts/Pixolletta8px.ttf"
     id: pixolletta20
