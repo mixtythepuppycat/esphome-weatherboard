@@ -67,7 +67,7 @@ blueprint:
       icon: mdi:minus
       collapsed: false
       input:
-        uv_index_threshold:
+        uv_index_threshold_value:
           name: UV index
           description: Index value which gets reported if above.
           default: 6
@@ -108,6 +108,7 @@ actions:
   - variables:
       threshold: !input threshold_rate
       graph_multi_scale: !input graph_multi
+      uv_index_threshold: !input uv_index_threshold_value
       
       # Do 5 min buckets for threshold detection
       next_hour_precipitation: >
