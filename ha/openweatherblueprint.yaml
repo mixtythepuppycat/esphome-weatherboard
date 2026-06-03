@@ -168,13 +168,23 @@ actions:
         {%- endif -%}
         {%- endif -%}
 
-      today_description: >
+      uv_description: >
         {%- set forecasts = hourly_forecasts['weather.openweathermap'].forecast -%}
-        {%- set high_ui_today = forecasts[:24] | selectattr('uv_index', 'gt', uv_index_threshold) | first | default("No") -%}
-        {%- if high_ui_today == "No" or as_datetime(high_ui_today['datetime']) > today_at("23:59") or today_precipitation_description != "No rain today" -%} 
-        {{today_precipitation_description}}
+        {%- set high_uv_today = forecasts[:24] | selectattr('uv_index', 'gt', uv_index_threshold) | first | default("No") -%}
+        {%- set current_uv = states("sensor.openweathermap_uv_index") | round(0, 'floor') -%}
+        {%- if current_uv > uv_index_threshold -%}
+        UV {{current_uv}}
+        {%- elif high_uv_today != "No" and as_datetime(high_uv_today['datetime']) < today_at("23:59") -%} 
+        UV {{high_uv_today["uv_index"] | int}} at {{ high_uv_today['datetime'] | as_timestamp | timestamp_custom('%H:00', true) }}
         {%- else -%}
-        UV {{high_ui_today["uv_index"] | int}} at {{ high_ui_today['datetime'] | as_timestamp | timestamp_custom('%H:00', true) }}
+        null
+        {%- endif -%}
+
+      today_description: >
+        {%- if uv_description != "null" and today_precipitation_description == "No rain today" -%} 
+        {{uv_description}}
+        {%- else -%}
+        {{today_precipitation_description}}
         {%- endif -%}
 
   - action: input_text.set_value
