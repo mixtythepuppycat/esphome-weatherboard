@@ -1,3 +1,24 @@
+# Weatherboard firmware overlay.
+#
+# Weather data is fetched DIRECTLY from the OpenWeatherMap One Call API (3.0)
+# via ESPHome's http_request component — no Home Assistant required for weather.
+# The device still talks to Home Assistant (api/OTA/brightness/transit tracker
+# from the upstream transit-tracker package), but weather no longer depends on it.
+#
+# Required secrets (add to your secrets.yaml — never commit it):
+#   wifi_ssid / wifi_password        (existing)
+#   owm_url                          full One Call URL, e.g.:
+#     https://api.openweathermap.org/data/3.0/onecall?lat=<LAT>&lon=<LON>&exclude=alerts&units=metric&appid=<KEY>
+#
+# The weather icon glyph set is selected from current.weather.id (which mirrors the
+# HA OpenWeatherMap condition map) plus the icon code's d/n suffix for day/night —
+# see the glyph map in the weather_page lambda below.
+
+substitutions:
+  owm_poll_interval: "5min"      # 288 calls/day; OWM One Call 3.0 free tier = 1000/day
+  owm_rain_threshold: "0.0"      # mm/h — a 5-min batch averaging <= this is treated as dry
+  owm_graph_scale: "1"           # multiplier applied to each graph bar height
+  owm_uv_threshold: "6"          # UV index above which "UV N" is shown on a dry day
 
 # Transit Tracker Section
 packages:
@@ -16,80 +37,207 @@ esphome:
     - <sstream>
 
 switch:
-- platform: template
-  name: "Display Weather"
-  id: weather_display_switch
-  lambda: |-
-    return id(matrix).get_active_page() == id(weather_page);
-  turn_on_action:
-    - display.page.show: weather_page
-  turn_off_action:
-    - display.page.show: weather_page
-- platform: template
-  name: "Display Transit"
-  id: transit_display_switch
-  lambda: |-
-    return id(matrix).get_active_page() == id(transit_schedule);
-  turn_on_action:
-    - display.page.show: transit_schedule
-  turn_off_action:
-    - display.page.show: transit_schedule
+  - platform: template
+    name: "Display Weather"
+    id: weather_display_switch
+    lambda: |-
+      return id(matrix).get_active_page() == id(weather_page);
+    turn_on_action:
+      - display.page.show: weather_page
+    turn_off_action:
+      - display.page.show: weather_page
+  - platform: template
+    name: "Display Transit"
+    id: transit_display_switch
+    lambda: |-
+      return id(matrix).get_active_page() == id(transit_schedule);
+    turn_on_action:
+      - display.page.show: transit_schedule
+    turn_off_action:
+      - display.page.show: transit_schedule
+
+# Local weather state populated directly from the OWM One Call API.
+# These template entities are the ONLY weather inputs the display lambda reads.
+sensor:
+  - platform: template
+    id: owm_current_temp
+    name: "Current Temperature"
+    unit_of_measurement: "°C"
+  - platform: template
+    id: owm_today_high_temp
+    name: "Today High"
+    unit_of_measurement: "°C"
+  - platform: template
+    id: owm_today_low_temp
+    name: "Today Low"
+    unit_of_measurement: "°C"
+  - platform: template
+    id: owm_today_rain_chance
+    name: "Today Rain Chance"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+  - platform: template
+    id: owm_current_uv
+    name: "Current UV Index"
+    accuracy_decimals: 1
+  - platform: template
+    id: owm_weather_id
+    name: "Weather Condition ID"
+    icon: mdi:weather-cloudy
+    accuracy_decimals: 0
 
 text_sensor:
-  - platform: homeassistant
-    id: ha_temperature
-    entity_id: weather.openweathermap
-    attribute: temperature
-  - platform: homeassistant
-    id: ha_rain_description
-    entity_id: input_text.next_hour_rain_description
-  - platform: homeassistant
-    id: ha_today_precipitation_description
-    entity_id: input_text.today_precipitation_description
-  - platform: homeassistant
-    id: ha_rain_values
-    entity_id: input_text.rain_values
-    filters:
-      - substitute: 
-        - "[ ->"
-        - "] ->"
-          
-  - platform: homeassistant
-    id: ha_weather_state
-    entity_id: weather.openweathermap
-    on_value: 
-      then:
-        - homeassistant.action: 
-            action: openweathermap.get_minute_forecast
-            data:
-              entity_id: weather.openweathermap
+  - platform: template
+    id: owm_icon_code        # OWM icon code, e.g. "01d", "10n" (carries day/night)
+    icon: mdi:weather
+  - platform: template
+    id: owm_rain_values       # 60 comma-separated ints consumed by the graph renderer
+  - platform: template
+    id: owm_next_hour_desc    # "No rain" | "Ending in N" | "Rain in N" | "Rain this hour"
+  - platform: template
+    id: owm_today_desc        # "No rain today" | "Rain today …" | "Storm today …" | "UV N"
 
-number:
-  - platform: homeassistant
-    id: ha_today_high_temp
-    entity_id: input_number.today_high_temp
-  - platform: homeassistant
-    id: ha_today_low_temp
-    entity_id: input_number.today_low_temp
-  - platform: homeassistant
-    id: ha_today_rain_chance
-    entity_id: input_number.today_rain_chance
+# Fetch weather directly from OWM. The first real fetch is deferred until SNTP
+# time is valid (guarded below) so the today-summary timing math is grounded.
+interval:
+  - interval: ${owm_poll_interval}
+    then:
+      - if:
+          condition:
+            - lambda: 'return id(sntp_time).now().is_valid();'
+          then:
+            - http_request.get:
+                url: !secret owm_url
+                max_response_buffer_size: 64kb
+                capture_response: true
+                request_headers:
+                  Accept: "application/json"
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          ESP_LOGE("owm", "One Call API HTTP %d", response->status_code);
+                          return;
+                        }
+                        // parse_json uses the PSRAM-backed ArduinoJson allocator
+                        auto doc = esphome::json::parse_json(body);
+                        if (doc.isNull() || doc.overflowed()) {
+                          ESP_LOGE("owm", "One Call JSON parse failed (len=%u)", (unsigned) body.length());
+                          return;
+                        }
 
-sensor:
-  - platform: homeassistant
-    id: sun_elevation
-    entity_id: sun.sun
-    attribute: elevation
-  - platform: copy
-    source_id: sun_elevation
-    id: is_daytime
-    filters:
-      - lambda: |-
-          if(id(sun_elevation).state > 0) {
-            return true;
-          } else {
-            return false;
-          }
+                        long tz = (long) doc["timezone_offset"];
+
+                        // --- current ---
+                        float cur_temp = (float) doc["current"]["temp"];
+                        id(owm_current_temp).publish_state(cur_temp);
+                        float uvi = (float)(doc["current"]["uvi"] | 0.0);
+                        id(owm_current_uv).publish_state(uvi);
+                        int wid = (int) doc["current"]["weather"][0]["id"];
+                        id(owm_weather_id).publish_state((float) wid);
+                        std::string icon_code = doc["current"]["weather"][0]["icon"].as<std::string>();
+                        id(owm_icon_code).publish_state(icon_code.c_str());
+
+                        // --- today (daily[0]) ---
+                        id(owm_today_high_temp).publish_state((float) doc["daily"][0]["temp"]["max"]);
+                        id(owm_today_low_temp).publish_state((float) doc["daily"][0]["temp"]["min"]);
+                        float pop0 = (float)(doc["daily"][0]["pop"] | 0.0);
+                        id(owm_today_rain_chance).publish_state(pop0 * 100.0);
+
+                        // --- minutely: 5-minute batches, threshold on the batch average ---
+                        // (mirrors the HA blueprint's next_hour_precipitation)
+                        std::vector<int> bars;
+                        JsonArray minutely = doc["minutely"].as<JsonArray>();
+                        size_t n = minutely.size();
+                        for (size_t b = 0; b < n; b += 5) {
+                          float sum = 0.0f;
+                          size_t cnt = 0;
+                          for (size_t j = b; j < n && j < b + 5; ++j) {
+                            sum += (float)(minutely[j]["precipitation"] | 0.0);
+                            ++cnt;
+                          }
+                          float avg = (cnt > 0) ? (sum / (float) cnt) : 0.0f;
+                          bool wet = avg > (float) owm_rain_threshold;
+                          for (size_t j = b; j < n && j < b + 5; ++j) {
+                            float p = (float)(minutely[j]["precipitation"] | 0.0);
+                            int bar = wet ? (int) ceil((double) p * (double) owm_graph_scale) : 0;
+                            if (bar < 0) bar = 0;
+                            bars.push_back(bar);
+                            if (bars.size() >= 60) break;
+                          }
+                          if (bars.size() >= 60) break;
+                        }
+
+                        std::string csv;
+                        for (size_t i = 0; i < bars.size(); ++i) {
+                          if (i) csv += ",";
+                          csv += std::to_string(bars[i]);
+                        }
+                        id(owm_rain_values).publish_state(csv.c_str());
+
+                        // --- next-hour description (N = minutes, accurate) ---
+                        int nz = 0, first_zero = -1, first_rain = -1;
+                        for (size_t i = 0; i < bars.size(); ++i) {
+                          if (bars[i] > 0) {
+                            ++nz;
+                            if (first_rain < 0) first_rain = (int) i;
+                          } else if (first_zero < 0) {
+                            first_zero = (int) i;
+                          }
+                        }
+                        std::string nhdesc;
+                        if (nz == 0) nhdesc = "No rain";
+                        else if (nz == (int) bars.size()) nhdesc = "Rain this hour";
+                        else if (first_rain == 0) nhdesc = "Ending in " + std::to_string(first_zero);
+                        else nhdesc = "Rain in " + std::to_string(first_rain);
+                        id(owm_next_hour_desc).publish_state(nhdesc.c_str());
+
+                        // --- today summary (hourly timing preserved) ---
+                        // rain_states & storm set mirror HA's OpenWeatherMap condition map.
+                        long now_local = (long) id(sntp_time).now().timestamp + tz;
+                        long today_start = (now_local / 86400) * 86400;
+                        long today_end = today_start + 86400 - 1;
+                        std::string today_desc = "No rain today";
+                        JsonArray hourly = doc["hourly"].as<JsonArray>();
+                        for (auto h : hourly) {
+                          long dt = (long) h["dt"];
+                          long local_dt = dt + tz;
+                          if (local_dt > today_end) break;
+                          float rv = (float)(h["rain"]["1h"] | 0.0);
+                          int hid = (int) h["weather"][0]["id"];
+                          bool rain_state =
+                            ((hid >= 200 && hid <= 202) || (hid >= 230 && hid <= 232) ||   // lightning-rainy
+                             (hid >= 502 && hid <= 504) || hid == 314 || hid == 522 ||       // pouring
+                             (hid >= 300 && hid <= 313) || hid == 500 || hid == 501 ||      // rainy
+                             hid == 520 || hid == 521 ||
+                             hid == 511 || hid == 615 || hid == 616 ||                       // snowy-rainy
+                             hid == 906);                                                    // hail
+                          if (rv > (float) owm_rain_threshold && rain_state) {
+                            bool storm =
+                              ((hid >= 200 && hid <= 202) || (hid >= 230 && hid <= 232) ||
+                               hid == 906 || (hid >= 502 && hid <= 504) || hid == 522 || hid == 314);
+                            std::string cat = storm ? "Storm" : "Rain";
+                            std::string when;
+                            if (local_dt <= now_local) {
+                              when = "this hour";
+                            } else {
+                              long hl = (local_dt % 86400) / 3600;
+                              char buf[16];
+                              snprintf(buf, sizeof(buf), "at %02ld:00", hl);
+                              when = std::string(buf);
+                            }
+                            today_desc = cat + " today " + when;
+                            break;
+                          }
+                        }
+                        if (uvi > (float) owm_uv_threshold && today_desc == "No rain today") {
+                          char ub[16];
+                          snprintf(ub, sizeof(ub), "UV %.0f", (double) uvi);
+                          today_desc = std::string(ub);
+                        }
+                        id(owm_today_desc).publish_state(today_desc.c_str());
+          else:
+            - lambda: 'ESP_LOGD("owm", "SNTP not valid; deferring OWM fetch");'
 
 display:
   - platform: hub75
@@ -100,52 +248,52 @@ display:
           int x = it.get_width() / 2;
           int y = it.get_height() / 2;
           const char* icon;
-          std::string weather_state = id(ha_weather_state).state;
+          std::string icon_code = id(owm_icon_code).state;
+          int wid = (int) id(owm_weather_id).state;
 
-          if (weather_state == "sunny") {
-            icon = "\U000F0599";
-          } else if (weather_state == "partlycloudy" && id(is_daytime).state) {
-            icon = "\U000F0595";
-          } else if (weather_state == "partlycloudy") {
-            icon = "\U000F0F31";
-          } else if (weather_state == "cloudy") {
+          if (wid == 800) {
+            icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0594" : "\U000F0599";
+          } else if (wid == 801 || wid == 802) {
+            icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0F31" : "\U000F0595";
+          } else if (wid == 803 || wid == 804) {
             icon = "\U000F0590";
-          } else if (weather_state == "rainy") {
-            icon = "\U000F0597"; 
-          } else if (weather_state == "snowy") {
+          } else if (wid == 701 || wid == 721 || wid == 741) {
+            icon = "\U000F0591";
+          } else if (wid == 906) {
+            icon = "\U000F0592";
+          } else if ((wid >= 200 && wid <= 202) || (wid >= 230 && wid <= 232)) {
+            icon = "\U000F067E";
+          } else if (wid == 210 || wid == 211 || wid == 212 || wid == 221) {
+            icon = "\U000F0593";
+          } else if (wid == 502 || wid == 503 || wid == 504 || wid == 314 || wid == 522) {
+            icon = "\U000F0596";
+          } else if (wid == 300 || wid == 301 || wid == 302 || wid == 310 || wid == 311 || wid == 312 || wid == 313 || wid == 500 || wid == 501 || wid == 520 || wid == 521) {
+            icon = "\U000F0597";
+          } else if (wid >= 600 && wid <= 622) {
             icon = "\U000F0598";
-          } else if (weather_state == "pouring") {
-            icon = "\U000F0596";          
-          } else if (weather_state == "lightning") {
-            icon = "\U000F0593";           
-          } else if (weather_state == "clear-night") {
-            icon = "\U000F0594";  
-          } else if (weather_state == "fog") {
-            icon = "\U000F0591";     
-          } else if (weather_state == "hail") {
-            icon = "\U000F0592";   
-          } else if (weather_state == "lightning-rainy") {
-            icon = "\U000F067E";                  
-          } else if (weather_state == "snowy-rainy") {
-            icon = "\U000F0F35";                    
-          } else if (weather_state == "windy") {
-            icon = "\U000F059D";       
-          } else if (weather_state == "windy-variant") {
-            icon = "\U000F059E";                                               
-          } else if (weather_state == "exceptional") {
-            icon = "\U000F0F2F";       
-          } else {                
+          } else if (wid == 511 || wid == 615 || wid == 616) {
+            icon = "\U000F0F35";
+          } else if (wid == 905 || (wid >= 951 && wid <= 957)) {
+            icon = "\U000F059D";
+          } else if (wid >= 958 && wid <= 961) {
+            icon = "\U000F059E";
+          } else {
             icon = "\U000F0F2F";
           }
 
-          if(id(ha_rain_description).state == "No rain") {
+          std::string rain_desc = id(owm_next_hour_desc).state;
+          if (rain_desc.empty()) rain_desc = "No rain";
+          std::string today_d = id(owm_today_desc).state;
+          if (today_d.empty()) today_d = "No rain today";
+
+          if(rain_desc == "No rain") {
             auto rain_text_color = COLOR_ON;
-            
-            if(id(ha_today_precipitation_description).state != "No rain today") {
+
+            if(today_d != "No rain today") {
               rain_text_color = id(color_yellow);
             }
 
-            it.printf(it.get_width(), it.get_height(), id(pixolletta), rain_text_color, TextAlign::BOTTOM_RIGHT, "%s", id(ha_today_precipitation_description).state.c_str());
+            it.printf(it.get_width(), it.get_height(), id(pixolletta), rain_text_color, TextAlign::BOTTOM_RIGHT, "%s", today_d.c_str());
 
             auto now = id(sntp_time).now();
             // Using this method to display non-padded hour since strtime doesn't support %-I
@@ -157,7 +305,7 @@ display:
             }
           } else {
             int graphX = 65;
-            std::string list_data = id(ha_rain_values).state;
+            std::string list_data = id(owm_rain_values).state;
 
             // Draw graph boarders
             int x_left = graphX - 1;
@@ -189,14 +337,19 @@ display:
               graphX++;
             }
 
-            it.printf(it.get_width(), it.get_height(), id(pixolletta), id(color_red), TextAlign::BOTTOM_RIGHT, "%s", id(ha_rain_description).state.c_str());
+            it.printf(it.get_width(), it.get_height(), id(pixolletta), id(color_red), TextAlign::BOTTOM_RIGHT, "%s", rain_desc.c_str());
           }
 
           it.printf(2, 0, id(icon_font), COLOR_ON, TextAlign::TOP_LEFT, "%s", icon);
-          it.printf(5, it.get_height(), id(pixolletta), COLOR_ON, TextAlign::BOTTOM_LEFT, "%s°", id(ha_temperature).state.c_str());
-
-          it.printf(28, y - 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "H: %.0f°", id(ha_today_high_temp).state);
-          it.printf(28, y + 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "L: %.0f°", id(ha_today_low_temp).state);
+          if (!isnan(id(owm_current_temp).state)) {
+            it.printf(5, it.get_height(), id(pixolletta), COLOR_ON, TextAlign::BOTTOM_LEFT, "%.0f°", id(owm_current_temp).state);
+          }
+          if (!isnan(id(owm_today_high_temp).state)) {
+            it.printf(28, y - 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "H: %.0f°", id(owm_today_high_temp).state);
+          }
+          if (!isnan(id(owm_today_low_temp).state)) {
+            it.printf(28, y + 6, id(pixolletta), COLOR_ON, TextAlign::CENTER_LEFT, "L: %.0f°", id(owm_today_low_temp).state);
+          }
 
 font:
     # Upstream project is using local font, replace with remote font
@@ -222,10 +375,10 @@ font:
   - file: "https://github.com/mixtythepuppycat/esphome-weatherboard/raw/6aadb261f3cf58e4d3c509f35ac9656966e5f3ce/fonts/MaterialDesignIconsDesktop.ttf"
     id: icon_font
     size: 20
-    glyphs: 
+    glyphs:
       - "\U000F0590" # weather-cloudy
       - "\U000F0591" # weather-fog
-      - "\U000F0592" # weather-hail     
+      - "\U000F0592" # weather-hail
       - "\U000F0593" # weather-lightning
       - "\U000F0594" # weather-clear-night
       - "\U000F0595" # weather-partly-cloudy
@@ -243,7 +396,7 @@ font:
       - "\U000F059D" # weather-windy
       - "\U000F067E" # weather-lightning-rainy
       - "\U000F059E" # weather-windy-variant
-      - "\U000F0F2F" # weather-exceptional 
+      - "\U000F0F2F" # weather-exceptional
 
 color:
   - id: color_red
@@ -252,4 +405,3 @@ color:
     blue: 100%
   - id: color_yellow
     hex: FFFF00
-
