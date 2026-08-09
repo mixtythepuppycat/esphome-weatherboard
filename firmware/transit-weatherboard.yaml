@@ -157,10 +157,10 @@ interval:
                             ++cnt;
                           }
                           float avg = (cnt > 0) ? (sum / (float) cnt) : 0.0f;
-                          bool wet = avg > (float) owm_rain_threshold;
+                          bool wet = avg > (float) ${owm_rain_threshold};
                           for (size_t j = b; j < n && j < b + 5; ++j) {
                             float p = (float)(minutely[j]["precipitation"] | 0.0);
-                            int bar = wet ? (int) ceil((double) p * (double) owm_graph_scale) : 0;
+                            int bar = wet ? (int) ceil((double) p * (double) ${owm_graph_scale}) : 0;
                             if (bar < 0) bar = 0;
                             bars.push_back(bar);
                             if (bars.size() >= 60) break;
@@ -212,7 +212,7 @@ interval:
                              hid == 520 || hid == 521 ||
                              hid == 511 || hid == 615 || hid == 616 ||                       // snowy-rainy
                              hid == 906);                                                    // hail
-                          if (rv > (float) owm_rain_threshold && rain_state) {
+                          if (rv > (float) ${owm_rain_threshold} && rain_state) {
                             bool storm =
                               ((hid >= 200 && hid <= 202) || (hid >= 230 && hid <= 232) ||
                                hid == 906 || (hid >= 502 && hid <= 504) || hid == 522 || hid == 314);
@@ -230,7 +230,7 @@ interval:
                             break;
                           }
                         }
-                        if (uvi > (float) owm_uv_threshold && today_desc == "No rain today") {
+                        if (uvi > (float) ${owm_uv_threshold} && today_desc == "No rain today") {
                           char ub[16];
                           snprintf(ub, sizeof(ub), "UV %.0f", (double) uvi);
                           today_desc = std::string(ub);

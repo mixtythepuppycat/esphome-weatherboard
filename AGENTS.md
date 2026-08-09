@@ -20,16 +20,31 @@ start-esphome.sh                      # Docker entrypoint for the ESPHome dashbo
 
 ## Build & verify
 
-There is no compile/lint/test cycle — run ESPHome and hit **Install**:
+There is no lint/format step. Verification = compiling firmware in ESPHome.
+
+To compile headlessly (CI or a local container without the dashboard):
 
 ```sh
-./start-esphome.sh    # opens the ESPHome dashboard on http://localhost:6052
+# secrets.yaml (wifi_ssid, wifi_password, owm_url) must sit at the repo root.
+docker run --rm -v /cache \
+  -v "${PWD}:/config" -w /config \
+  ghcr.io/esphome/esphome:2026.6.5 compile firmware/transit-weatherboard.yaml
 ```
 
-`start-esphome.sh` pins `ghcr.io/esphome/esphome:2026.3.0`. ESPHome YAML relies on
-features that break across releases, so **do not bump the version tag** unless
-you've checked compatibility with the directives used here (`!secret`,
-`!extend`, `!remove`, `packages:`).
+- `start-esphome.sh` pins `ghcr.io/esphome/esphome:2026.6.5`. The upstream
+  `transit-tracker@main` package declares `min_version: "2026.6.5"`, so anything
+  older (the previous `2026.3.0` pin) refuses to load it. ESPHome YAML relies on
+  directives that can break across releases — if you must bump, first verify
+  compatibility with the directives used here (`!secret`, `!extend`, `!remove`,
+  `packages:`, `${subst}`).
+- **Network:** a real compile reaches `github.com` (the upstream package + fonts)
+  **and** the toolchains' registries — `api.platformio.org` /
+  `api.registry.platformio.org` (PlatformIO) and
+  `components-file.espressif.com` (ESP-IDF component registry, for ArduinoJson).
+- **Build cache:** PlatformIO materializes the toolchain via symlinks, so the
+  cache must live on a filesystem that allows symlinks. Mount a persistent volume
+  at `/cache` (as above) rather than relying on the bind-mounted `/config`, since
+  a bind mount of `${PWD}` rejects symlinks with `EPERM`.
 
 ## Firmware conventions
 
@@ -45,38 +60,53 @@ The firmware is a thin overlay on the upstream transit-tracker package:
   redefining it.
 - `- id: !remove pixolletta` removes the upstream font so this repo can redefine
   it with a remote URL + custom glyph set.
-- `!secret wifi_ssid` / `!secret wifi_password` are resolved from
-  `secrets.yaml` (not in this repo). It must contain both keys.
+- `!secret wifi_ssid`, `!secret wifi_password`, and `!secret owm_url` are
+  resolved from `secrets.yaml` (not committed — see `firmware/.gitignore`).
+  `owm_url` is the full OpenWeatherMap One Call 3.0 endpoint, e.g.:
+  `https://api.openweathermap.org/data/3.0/onecall?lat=<LAT>&lon=<LON>&exclude=alerts&units=metric&appid=<KEY>`
 
 ## Editing the weather page
 
 - Weather icon glyphs (`\U000F0599`, etc.) are codepoints from
   `fonts/MaterialDesignIconsDesktop.ttf`. Add icons to the `icon_font` glyph list
   in `firmware/transit-weatherboard.yaml` so they embed in the build.
-- The `weather_state` strings (`sunny`, `partlycloudy`, `rainy`, ...) must match
-  the condition strings emitted by the HA `weather.openweathermap` entity. If
-  you add a weather icon, add the matching icon to `ha/openweatherblueprint.yaml`
-  glyph logic and the `icon_font` glyphs list together.
+- Icons are selected by OWM weather `id` (which mirrors the HA OpenWeatherMap
+  condition map) combined with the icon code's `d`/`n` suffix for day/night, via
+  the glyph map in the `weather_page` lambda. `weather.id` values map 1:1 to the
+  OpenWeatherMap condition codes; add a new branch and its matching glyph
+  together.
 - Fonts are loaded from **pinned upstream commits** via raw GitHub URLs. Changing
   a font file means updating the commit hash in the URL.
 
-## Home Assistant setup (required order)
+## Home Assistant setup
 
-1. Add `ha/input_number.yaml` and `ha/input_text.yaml` contents to your
+Weather is fetched **on-device** from the OpenWeatherMap One Call 3.0 API (see
+`!secret owm_url` + the `interval` HTTP fetch in the firmware), so the OpenWeatherMap
+*HA integration* and the `ha/openweatherblueprint.yaml` input helpers are
+**deprecated** for weather. Home Assistant is still used for **transit + OTA**
+via the upstream transit-tracker package (`api:`/`ota:`).
+
+The deprecated legacy steps (retained for existing installs) were:
+
+1. Add `ha/input_number.yaml` and `ha/input_text.yaml` to your
    `configuration.yaml` (or an included file), then **reload YAML**. These
    helpers must exist before the blueprint runs.
 2. Import `ha/openweatherblueprint.yaml` into Home Assistant. It requires
    `homeassistant: min_version: "2026.2.3"` and the OpenWeatherMap integration in
    One Call API 3.0 mode.
-3. In your ESPHome device YAML, include this repo as a package:
-   ```yaml
-   packages:
-     transit_weatherboard: github://mixtythepuppycat/esphome-weatherboard/firmware/transit-weatherboard.yaml@main
-   ```
-4. Add `wifi_ssid` / `wifi_password` to your `secrets.yaml`.
 
-The blueprint polls OpenWeatherMap on a time pattern (default `/5` minutes) and
-writes rain values, descriptions, and high/low temps into the input helpers,
-which the ESPHome firmware reads via `homeassistant:` text/number sensor
-entities. See the blueprint's `polling_frequency`, `threshold_rate`, and
-`graph_multi` inputs to tune frequency and rain sensitivity.
+The recommended ESPHome device YAML is:
+
+    packages:
+      transit_weatherboard: github://mixtythepuppycat/esphome-weatherboard/firmware/transit-weatherboard.yaml@main
+
+    transit_tracker:
+      font_id: pixolletta   # forwarded to the upstream package
+
+and `secrets.yaml` must contain `wifi_ssid`, `wifi_password`, and `owm_url`.
+
+The (deprecated) blueprint polled OpenWeatherMap on a time pattern and wrote rain
+values, descriptions, and high/low temps into the input helpers, which the ESPHome
+firmware used to read via `homeassistant:` text/number sensor entities. The
+current firmware no longer reads those helpers; tune the fetch cadence with the
+`owm_poll_interval` substitution instead.
