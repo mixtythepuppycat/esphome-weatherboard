@@ -40,7 +40,7 @@ wifi:
 
 esphome:
   includes:
-    - <sstream>
+    - weather_logic.h
 
 switch:
   - platform: template
@@ -130,123 +130,20 @@ interval:
                           ESP_LOGE("owm", "One Call API HTTP %d", response->status_code);
                           return;
                         }
-                        // parse_json uses the PSRAM-backed ArduinoJson allocator
-                        auto doc = esphome::json::parse_json(body);
-                        if (doc.isNull() || doc.overflowed()) {
-                          ESP_LOGE("owm", "One Call JSON parse failed (len=%u)", (unsigned) body.length());
-                          return;
+                        OwmConfig cfg{ (float) ${owm_rain_threshold}, (float) ${owm_graph_scale}, (float) ${owm_uv_threshold} };
+                        OwmData data;
+                        if (parse_owm(body, data, cfg, (long) id(sntp_time).now().timestamp)) {
+                          id(owm_current_temp).publish_state(data.current_temp);
+                          id(owm_current_uv).publish_state(data.current_uvi);
+                          id(owm_weather_id).publish_state((float) data.weather_id);
+                          id(owm_icon_code).publish_state(data.icon_code.c_str());
+                          id(owm_today_high_temp).publish_state(data.today_high);
+                          id(owm_today_low_temp).publish_state(data.today_low);
+                          id(owm_today_rain_chance).publish_state(data.today_pop * 100.0f);
+                          id(owm_rain_values).publish_state(data.rain_csv.c_str());
+                          id(owm_next_hour_desc).publish_state(data.next_hour_desc.c_str());
+                          id(owm_today_desc).publish_state(data.today_desc.c_str());
                         }
-
-                        long tz = (long) doc["timezone_offset"];
-
-                        // --- current ---
-                        float cur_temp = (float) doc["current"]["temp"];
-                        id(owm_current_temp).publish_state(cur_temp);
-                        float uvi = (float)(doc["current"]["uvi"] | 0.0);
-                        id(owm_current_uv).publish_state(uvi);
-                        int wid = (int) doc["current"]["weather"][0]["id"];
-                        id(owm_weather_id).publish_state((float) wid);
-                        std::string icon_code = doc["current"]["weather"][0]["icon"].as<std::string>();
-                        id(owm_icon_code).publish_state(icon_code.c_str());
-
-                        // --- today (daily[0]) ---
-                        id(owm_today_high_temp).publish_state((float) doc["daily"][0]["temp"]["max"]);
-                        id(owm_today_low_temp).publish_state((float) doc["daily"][0]["temp"]["min"]);
-                        float pop0 = (float)(doc["daily"][0]["pop"] | 0.0);
-                        id(owm_today_rain_chance).publish_state(pop0 * 100.0);
-
-                        // --- minutely: 5-minute batches, threshold on the batch average ---
-                        // (mirrors the HA blueprint's next_hour_precipitation)
-                        std::vector<int> bars;
-                        JsonArray minutely = doc["minutely"].as<JsonArray>();
-                        size_t n = minutely.size();
-                        for (size_t b = 0; b < n; b += 5) {
-                          float sum = 0.0f;
-                          size_t cnt = 0;
-                          for (size_t j = b; j < n && j < b + 5; ++j) {
-                            sum += (float)(minutely[j]["precipitation"] | 0.0);
-                            ++cnt;
-                          }
-                          float avg = (cnt > 0) ? (sum / (float) cnt) : 0.0f;
-                          bool wet = avg > (float) ${owm_rain_threshold};
-                          for (size_t j = b; j < n && j < b + 5; ++j) {
-                            float p = (float)(minutely[j]["precipitation"] | 0.0);
-                            int bar = wet ? (int) ceil((double) p * (double) ${owm_graph_scale}) : 0;
-                            if (bar < 0) bar = 0;
-                            bars.push_back(bar);
-                            if (bars.size() >= 60) break;
-                          }
-                          if (bars.size() >= 60) break;
-                        }
-
-                        std::string csv;
-                        for (size_t i = 0; i < bars.size(); ++i) {
-                          if (i) csv += ",";
-                          csv += std::to_string(bars[i]);
-                        }
-                        id(owm_rain_values).publish_state(csv.c_str());
-
-                        // --- next-hour description (N = minutes, accurate) ---
-                        int nz = 0, first_zero = -1, first_rain = -1;
-                        for (size_t i = 0; i < bars.size(); ++i) {
-                          if (bars[i] > 0) {
-                            ++nz;
-                            if (first_rain < 0) first_rain = (int) i;
-                          } else if (first_zero < 0) {
-                            first_zero = (int) i;
-                          }
-                        }
-                        std::string nhdesc;
-                        if (nz == 0) nhdesc = "No rain";
-                        else if (nz == (int) bars.size()) nhdesc = "Rain this hour";
-                        else if (first_rain == 0) nhdesc = "Ending in " + std::to_string(first_zero);
-                        else nhdesc = "Rain in " + std::to_string(first_rain);
-                        id(owm_next_hour_desc).publish_state(nhdesc.c_str());
-
-                        // --- today summary (hourly timing preserved) ---
-                        // rain_states & storm set mirror HA's OpenWeatherMap condition map.
-                        long now_local = (long) id(sntp_time).now().timestamp + tz;
-                        long today_start = (now_local / 86400) * 86400;
-                        long today_end = today_start + 86400 - 1;
-                        std::string today_desc = "No rain today";
-                        JsonArray hourly = doc["hourly"].as<JsonArray>();
-                        for (auto h : hourly) {
-                          long dt = (long) h["dt"];
-                          long local_dt = dt + tz;
-                          if (local_dt > today_end) break;
-                          float rv = (float)(h["rain"]["1h"] | 0.0);
-                          int hid = (int) h["weather"][0]["id"];
-                          bool rain_state =
-                            ((hid >= 200 && hid <= 202) || (hid >= 230 && hid <= 232) ||   // lightning-rainy
-                             (hid >= 502 && hid <= 504) || hid == 314 || hid == 522 ||       // pouring
-                             (hid >= 300 && hid <= 313) || hid == 500 || hid == 501 ||      // rainy
-                             hid == 520 || hid == 521 ||
-                             hid == 511 || hid == 615 || hid == 616 ||                       // snowy-rainy
-                             hid == 906);                                                    // hail
-                          if (rv > (float) ${owm_rain_threshold} && rain_state) {
-                            bool storm =
-                              ((hid >= 200 && hid <= 202) || (hid >= 230 && hid <= 232) ||
-                               hid == 906 || (hid >= 502 && hid <= 504) || hid == 522 || hid == 314);
-                            std::string cat = storm ? "Storm" : "Rain";
-                            std::string when;
-                            if (local_dt <= now_local) {
-                              when = "this hour";
-                            } else {
-                              long hl = (local_dt % 86400) / 3600;
-                              char buf[16];
-                              snprintf(buf, sizeof(buf), "at %02ld:00", hl);
-                              when = std::string(buf);
-                            }
-                            today_desc = cat + " today " + when;
-                            break;
-                          }
-                        }
-                        if (uvi > (float) ${owm_uv_threshold} && today_desc == "No rain today") {
-                          char ub[16];
-                          snprintf(ub, sizeof(ub), "UV %.0f", (double) uvi);
-                          today_desc = std::string(ub);
-                        }
-                        id(owm_today_desc).publish_state(today_desc.c_str());
             - http_request.get:
                 url: https://www.airnowapi.org/aq/observation/current/ziplatlong/?format=application/json&latitude=${own_lat}&longitude=${own_lon}&API_KEY=${airnow_api_key}
                 max_response_buffer_size: 8kb
@@ -260,25 +157,9 @@ interval:
                           ESP_LOGE("aqi", "AirNow API HTTP %d", response->status_code);
                           return;
                         }
-                        auto doc = esphome::json::parse_json(body);
-                        if (doc.isNull() || doc.overflowed()) {
-                          ESP_LOGE("aqi", "AirNow JSON parse failed (len=%u)", (unsigned) body.length());
-                          return;
-                        }
-                        JsonArray arr = doc.as<JsonArray>();
-                        int best_aqi = 0;
-                        bool found = false;
-                        for (auto obs : arr) {
-                          int a = (int) obs["nowcastAQI"];
-                          if (!found || a > best_aqi) {
-                            best_aqi = a;
-                            found = true;
-                          }
-                        }
-                        if (found) {
-                          id(aqi_value).publish_state((float) best_aqi);
-                        } else {
-                          ESP_LOGW("aqi", "AirNow returned no usable observations");
+                        int aqi = parse_aqi(body);
+                        if (aqi > 0) {
+                          id(aqi_value).publish_state((float) aqi);
                         }
           else:
             - lambda: 'ESP_LOGD("owm", "SNTP not valid; deferring OWM fetch");'
@@ -305,39 +186,8 @@ display:
             else if (aqi <= 300) icon_color = id(color_purple);
             else                 icon_color = id(color_maroon);
           } else {
-            std::string icon_code = id(owm_icon_code).state;
-            int wid = (int) id(owm_weather_id).state;
-
-            if (wid == 800) {
-              icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0594" : "\U000F0599";
-            } else if (wid == 801 || wid == 802) {
-              icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0F31" : "\U000F0595";
-            } else if (wid == 803 || wid == 804) {
-              icon = "\U000F0590";
-            } else if (wid == 701 || wid == 721 || wid == 741) {
-              icon = "\U000F0591";
-            } else if (wid == 906) {
-              icon = "\U000F0592";
-            } else if ((wid >= 200 && wid <= 202) || (wid >= 230 && wid <= 232)) {
-              icon = "\U000F067E";
-            } else if (wid == 210 || wid == 211 || wid == 212 || wid == 221) {
-              icon = "\U000F0593";
-            } else if (wid == 502 || wid == 503 || wid == 504 || wid == 314 || wid == 522) {
-              icon = "\U000F0596";
-            } else if (wid == 300 || wid == 301 || wid == 302 || wid == 310 || wid == 311 || wid == 312 || wid == 313 || wid == 500 || wid == 501 || wid == 520 || wid == 521) {
-              icon = "\U000F0597";
-            } else if (wid >= 600 && wid <= 622) {
-              icon = "\U000F0598";
-            } else if (wid == 511 || wid == 615 || wid == 616) {
-              icon = "\U000F0F35";
-            } else if (wid == 905 || (wid >= 951 && wid <= 957)) {
-              icon = "\U000F059D";
-            } else if (wid >= 958 && wid <= 961) {
-              icon = "\U000F059E";
-            } else {
-              icon = "\U000F0F2F";
-            }
-          }  // close show_aqi_mask else
+           icon = glyph_for_weather_id((int) id(owm_weather_id).state, id(owm_icon_code).state);
+           }  // close show_aqi_mask else
 
           std::string rain_desc = id(owm_next_hour_desc).state;
           if (rain_desc.empty()) rain_desc = "No rain";
@@ -363,7 +213,6 @@ display:
             }
           } else {
             int graphX = 65;
-            std::string list_data = id(owm_rain_values).state;
 
             // Draw graph boarders
             int x_left = graphX - 1;
@@ -379,13 +228,8 @@ display:
             int line_bottom = y_bottom - 1;
             int line_max_height = 16;
 
-            // Simple comma-separated parsing of rain data
-            std::istringstream ss(list_data);
-            std::string item;
-
-            while (std::getline(ss, item, ',')) {
-              int num = std::stoi(item);
-
+            auto bars = parse_rain_csv(id(owm_rain_values).state);
+            for (int num : bars) {
               if(num > 0) {
                 if (num > line_max_height) {num = line_max_height;}
                 int line_size = line_bottom - num + 1;
