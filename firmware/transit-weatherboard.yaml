@@ -292,52 +292,52 @@ display:
         lambda: |-
           int x = it.get_width() / 2;
           int y = it.get_height() / 2;
-              const char* icon;
-              auto icon_color = COLOR_ON;
-              float aqi = id(aqi_value).state;
-              bool show_aqi_mask = !isnan(aqi) && (aqi >= (float) ${aqi_mask_threshold});
-              if (show_aqi_mask) {
-                icon = "\U000F1587";
-                if (aqi <= 50)       icon_color = id(color_green);
-                else if (aqi <= 100) icon_color = id(color_yellow);
-                else if (aqi <= 150) icon_color = id(color_orange);
-                else if (aqi <= 200) icon_color = id(color_red);
-                else if (aqi <= 300) icon_color = id(color_purple);
-                else                 icon_color = id(color_maroon);
-              } else {
-              std::string icon_code = id(owm_icon_code).state;
-              int wid = (int) id(owm_weather_id).state;
+          const char* icon;
+          auto icon_color = COLOR_ON;
+          float aqi = id(aqi_value).state;
+          bool show_aqi_mask = !isnan(aqi) && (aqi >= (float) ${aqi_mask_threshold});
+          if (show_aqi_mask) {
+            icon = "\U000F1587";
+            if (aqi <= 50)       icon_color = id(color_green);
+            else if (aqi <= 100) icon_color = id(color_yellow);
+            else if (aqi <= 150) icon_color = id(color_orange);
+            else if (aqi <= 200) icon_color = id(color_red);
+            else if (aqi <= 300) icon_color = id(color_purple);
+            else                 icon_color = id(color_maroon);
+          } else {
+            std::string icon_code = id(owm_icon_code).state;
+            int wid = (int) id(owm_weather_id).state;
 
-              if (wid == 800) {
-            icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0594" : "\U000F0599";
-          } else if (wid == 801 || wid == 802) {
-            icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0F31" : "\U000F0595";
-          } else if (wid == 803 || wid == 804) {
-            icon = "\U000F0590";
-          } else if (wid == 701 || wid == 721 || wid == 741) {
-            icon = "\U000F0591";
-          } else if (wid == 906) {
-            icon = "\U000F0592";
-          } else if ((wid >= 200 && wid <= 202) || (wid >= 230 && wid <= 232)) {
-            icon = "\U000F067E";
-          } else if (wid == 210 || wid == 211 || wid == 212 || wid == 221) {
-            icon = "\U000F0593";
-          } else if (wid == 502 || wid == 503 || wid == 504 || wid == 314 || wid == 522) {
-            icon = "\U000F0596";
-          } else if (wid == 300 || wid == 301 || wid == 302 || wid == 310 || wid == 311 || wid == 312 || wid == 313 || wid == 500 || wid == 501 || wid == 520 || wid == 521) {
-            icon = "\U000F0597";
-          } else if (wid >= 600 && wid <= 622) {
-            icon = "\U000F0598";
-          } else if (wid == 511 || wid == 615 || wid == 616) {
-            icon = "\U000F0F35";
-          } else if (wid == 905 || (wid >= 951 && wid <= 957)) {
-            icon = "\U000F059D";
-          } else if (wid >= 958 && wid <= 961) {
-            icon = "\U000F059E";
-              } else {
-                icon = "\U000F0F2F";
-              }
-              }  // close show_aqi_mask else
+            if (wid == 800) {
+              icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0594" : "\U000F0599";
+            } else if (wid == 801 || wid == 802) {
+              icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0F31" : "\U000F0595";
+            } else if (wid == 803 || wid == 804) {
+              icon = "\U000F0590";
+            } else if (wid == 701 || wid == 721 || wid == 741) {
+              icon = "\U000F0591";
+            } else if (wid == 906) {
+              icon = "\U000F0592";
+            } else if ((wid >= 200 && wid <= 202) || (wid >= 230 && wid <= 232)) {
+              icon = "\U000F067E";
+            } else if (wid == 210 || wid == 211 || wid == 212 || wid == 221) {
+              icon = "\U000F0593";
+            } else if (wid == 502 || wid == 503 || wid == 504 || wid == 314 || wid == 522) {
+              icon = "\U000F0596";
+            } else if (wid == 300 || wid == 301 || wid == 302 || wid == 310 || wid == 311 || wid == 312 || wid == 313 || wid == 500 || wid == 501 || wid == 520 || wid == 521) {
+              icon = "\U000F0597";
+            } else if (wid >= 600 && wid <= 622) {
+              icon = "\U000F0598";
+            } else if (wid == 511 || wid == 615 || wid == 616) {
+              icon = "\U000F0F35";
+            } else if (wid == 905 || (wid >= 951 && wid <= 957)) {
+              icon = "\U000F059D";
+            } else if (wid >= 958 && wid <= 961) {
+              icon = "\U000F059E";
+            } else {
+              icon = "\U000F0F2F";
+            }
+          }  // close show_aqi_mask else
 
           std::string rain_desc = id(owm_next_hour_desc).state;
           if (rain_desc.empty()) rain_desc = "No rain";
