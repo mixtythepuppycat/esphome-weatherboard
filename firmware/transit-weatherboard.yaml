@@ -7,8 +7,8 @@
 #
 # Required secrets (add to your secrets.yaml — never commit it):
 #   wifi_ssid / wifi_password        (existing)
-#   own_api_key                      OpenWeatherMap One Call 3.0 key (built into the OWM URL inline)
-#   own_lat / own_lon                observer lat/long (shared by OWM and AirNow)
+#   owm_api_key                      OpenWeatherMap One Call 3.0 key (built into the OWM URL inline)
+#   owm_lat / owm_lon                observer lat/long (shared by OWM and AirNow)
 #   airnow_api_key                   AirNow API key (separate from the OWM key) for AQI
 #
 # The weather icon glyph set is selected from current.weather.id (which mirrors the
@@ -20,9 +20,9 @@ substitutions:
   owm_rain_threshold: "0.0"      # mm/h — a 5-min batch averaging <= this is treated as dry
   owm_graph_scale: "1"           # multiplier applied to each graph bar height
   owm_uv_threshold: "6"          # UV index above which "UV N" is shown on a dry day
-  owm_api_key: !secret own_api_key
-  own_lat: !secret own_lat
-  own_lon: !secret own_lon
+  owm_api_key: !secret owm_api_key
+  owm_lat: !secret owm_lat
+  owm_lon: !secret owm_lon
   airnow_api_key: !secret airnow_api_key
   aqi_mask_threshold: "51"     # replace the weather icon with the colored AQI mask when AQI >= this (51 = first yellow tier)
 
@@ -118,7 +118,7 @@ interval:
             - lambda: 'return id(sntp_time).now().is_valid();'
           then:
             - http_request.get:
-                url: https://api.openweathermap.org/data/3.0/onecall?lat=${own_lat}&lon=${own_lon}&exclude=alerts&units=metric&appid=${owm_api_key}
+                url: https://api.openweathermap.org/data/3.0/onecall?lat=${owm_lat}&lon=${owm_lon}&exclude=alerts&units=metric&appid=${owm_api_key}
                 max_response_buffer_size: 64kb
                 capture_response: true
                 request_headers:
@@ -145,7 +145,7 @@ interval:
                           id(owm_today_desc).publish_state(data.today_desc.c_str());
                         }
             - http_request.get:
-                url: https://www.airnowapi.org/aq/observation/current/ziplatlong/?format=application/json&latitude=${own_lat}&longitude=${own_lon}&API_KEY=${airnow_api_key}
+                url: https://www.airnowapi.org/aq/observation/current/ziplatlong/?format=application/json&latitude=${owm_lat}&longitude=${owm_lon}&API_KEY=${airnow_api_key}
                 max_response_buffer_size: 8kb
                 capture_response: true
                 request_headers:
