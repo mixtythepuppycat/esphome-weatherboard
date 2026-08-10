@@ -7,8 +7,9 @@
 #
 # Required secrets (add to your secrets.yaml — never commit it):
 #   wifi_ssid / wifi_password        (existing)
-#   owm_url                          full One Call URL, e.g.:
-#     https://api.openweathermap.org/data/3.0/onecall?lat=<LAT>&lon=<LON>&exclude=alerts&units=metric&appid=<KEY>
+#   own_api_key                      OpenWeatherMap One Call 3.0 key (built into the OWM URL inline)
+#   own_lat / own_lon                observer lat/long (shared by OWM and AirNow)
+#   airnow_api_key                   AirNow API key (separate from the OWM key) for AQI
 #
 # The weather icon glyph set is selected from current.weather.id (which mirrors the
 # HA OpenWeatherMap condition map) plus the icon code's d/n suffix for day/night —
@@ -19,6 +20,11 @@ substitutions:
   owm_rain_threshold: "0.0"      # mm/h — a 5-min batch averaging <= this is treated as dry
   owm_graph_scale: "1"           # multiplier applied to each graph bar height
   owm_uv_threshold: "6"          # UV index above which "UV N" is shown on a dry day
+  owm_api_key: !secret own_api_key
+  own_lat: !secret own_lat
+  own_lon: !secret own_lon
+  airnow_api_key: !secret airnow_api_key
+  aqi_mask_threshold: "51"     # replace the weather icon with the colored AQI mask when AQI >= this (51 = first yellow tier)
 
 # Transit Tracker Section
 packages:
@@ -85,6 +91,11 @@ sensor:
     name: "Weather Condition ID"
     icon: mdi:weather-cloudy
     accuracy_decimals: 0
+  - platform: template
+    id: aqi_value
+    name: "AQI"
+    accuracy_decimals: 0
+    icon: mdi:air-purifier
 
 text_sensor:
   - platform: template
@@ -107,7 +118,7 @@ interval:
             - lambda: 'return id(sntp_time).now().is_valid();'
           then:
             - http_request.get:
-                url: !secret owm_url
+                url: https://api.openweathermap.org/data/3.0/onecall?lat=${own_lat}&lon=${own_lon}&exclude=alerts&units=metric&appid=${owm_api_key}
                 max_response_buffer_size: 64kb
                 capture_response: true
                 request_headers:
@@ -236,9 +247,43 @@ interval:
                           today_desc = std::string(ub);
                         }
                         id(owm_today_desc).publish_state(today_desc.c_str());
+            - http_request.get:
+                url: https://www.airnowapi.org/aq/observation/current/ziplatlong/?format=application/json&latitude=${own_lat}&longitude=${own_lon}&API_KEY=${airnow_api_key}
+                max_response_buffer_size: 8kb
+                capture_response: true
+                request_headers:
+                  Accept: "application/json"
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          ESP_LOGE("aqi", "AirNow API HTTP %d", response->status_code);
+                          return;
+                        }
+                        auto doc = esphome::json::parse_json(body);
+                        if (doc.isNull() || doc.overflowed()) {
+                          ESP_LOGE("aqi", "AirNow JSON parse failed (len=%u)", (unsigned) body.length());
+                          return;
+                        }
+                        JsonArray arr = doc.as<JsonArray>();
+                        int best_aqi = 0;
+                        bool found = false;
+                        for (auto obs : arr) {
+                          int a = (int) obs["nowcastAQI"];
+                          if (!found || a > best_aqi) {
+                            best_aqi = a;
+                            found = true;
+                          }
+                        }
+                        if (found) {
+                          id(aqi_value).publish_state((float) best_aqi);
+                        } else {
+                          ESP_LOGW("aqi", "AirNow returned no usable observations");
+                        }
           else:
             - lambda: 'ESP_LOGD("owm", "SNTP not valid; deferring OWM fetch");'
 
+# The target display is 128x32 (two 64x32 panels, layout_cols: 2)
 display:
   - platform: hub75
     id: !extend matrix
@@ -247,11 +292,23 @@ display:
         lambda: |-
           int x = it.get_width() / 2;
           int y = it.get_height() / 2;
-          const char* icon;
-          std::string icon_code = id(owm_icon_code).state;
-          int wid = (int) id(owm_weather_id).state;
+              const char* icon;
+              auto icon_color = COLOR_ON;
+              float aqi = id(aqi_value).state;
+              bool show_aqi_mask = !isnan(aqi) && (aqi >= (float) ${aqi_mask_threshold});
+              if (show_aqi_mask) {
+                icon = "\U000F1587";
+                if (aqi <= 50)       icon_color = id(color_green);
+                else if (aqi <= 100) icon_color = id(color_yellow);
+                else if (aqi <= 150) icon_color = id(color_orange);
+                else if (aqi <= 200) icon_color = id(color_red);
+                else if (aqi <= 300) icon_color = id(color_purple);
+                else                 icon_color = id(color_maroon);
+              } else {
+              std::string icon_code = id(owm_icon_code).state;
+              int wid = (int) id(owm_weather_id).state;
 
-          if (wid == 800) {
+              if (wid == 800) {
             icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0594" : "\U000F0599";
           } else if (wid == 801 || wid == 802) {
             icon = (!icon_code.empty() && icon_code[icon_code.size()-1] == 'n') ? "\U000F0F31" : "\U000F0595";
@@ -277,9 +334,10 @@ display:
             icon = "\U000F059D";
           } else if (wid >= 958 && wid <= 961) {
             icon = "\U000F059E";
-          } else {
-            icon = "\U000F0F2F";
-          }
+              } else {
+                icon = "\U000F0F2F";
+              }
+              }  // close show_aqi_mask else
 
           std::string rain_desc = id(owm_next_hour_desc).state;
           if (rain_desc.empty()) rain_desc = "No rain";
@@ -340,7 +398,7 @@ display:
             it.printf(it.get_width(), it.get_height(), id(pixolletta), id(color_red), TextAlign::BOTTOM_RIGHT, "%s", rain_desc.c_str());
           }
 
-          it.printf(2, 0, id(icon_font), COLOR_ON, TextAlign::TOP_LEFT, "%s", icon);
+          it.printf(2, 0, id(icon_font), icon_color, TextAlign::TOP_LEFT, "%s", icon);
           if (!isnan(id(owm_current_temp).state)) {
             it.printf(5, it.get_height(), id(pixolletta), COLOR_ON, TextAlign::BOTTOM_LEFT, "%.0f°", id(owm_current_temp).state);
           }
@@ -397,6 +455,7 @@ font:
       - "\U000F067E" # weather-lightning-rainy
       - "\U000F059E" # weather-windy-variant
       - "\U000F0F2F" # weather-exceptional
+      - "\U000F1587" # air-quality mask (face-mask-outline) — shown colored when AQI >= threshold
 
 color:
   - id: color_red
@@ -405,3 +464,11 @@ color:
     blue: 100%
   - id: color_yellow
     hex: FFFF00
+  - id: color_green
+    hex: 00E400
+  - id: color_orange
+    hex: FF7E00
+  - id: color_purple
+    hex: 9D00FF
+  - id: color_maroon
+    hex: 7E0023

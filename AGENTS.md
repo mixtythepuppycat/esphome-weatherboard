@@ -10,7 +10,7 @@ ESPHome.
 
 ```
 firmware/transit-weatherboard.yaml   # ESPHome YAML — the only source file
-ha/                                   # Home Assistant helper + blueprint YAML
+ha/                                   # Home Assistant helper + blueprint YAML (Files in this folder are deprecated)
   input_number.yaml                   # helpers: today_high_temp, today_low_temp, today_rain_chance
   input_text.yaml                    # helpers: next_hour_rain_description, rain_values, today_precipitation_description
   openweatherblueprint.yaml           # Blueprint that populates the helpers from OpenWeatherMap
@@ -25,7 +25,7 @@ There is no lint/format step. Verification = compiling firmware in ESPHome.
 To compile headlessly (CI or a local container without the dashboard):
 
 ```sh
-# secrets.yaml (wifi_ssid, wifi_password, owm_url) must sit at the repo root.
+# secrets.yaml (wifi_ssid, wifi_password, own_api_key, own_lat, own_lon, airnow_api_key) must sit at the repo root.
 docker run --rm -v /cache \
   -v "${PWD}:/config" -w /config \
   ghcr.io/esphome/esphome:2026.6.5 compile firmware/transit-weatherboard.yaml
@@ -60,10 +60,12 @@ The firmware is a thin overlay on the upstream transit-tracker package:
   redefining it.
 - `- id: !remove pixolletta` removes the upstream font so this repo can redefine
   it with a remote URL + custom glyph set.
-- `!secret wifi_ssid`, `!secret wifi_password`, and `!secret owm_url` are
-  resolved from `secrets.yaml` (not committed — see `firmware/.gitignore`).
-  `owm_url` is the full OpenWeatherMap One Call 3.0 endpoint, e.g.:
-  `https://api.openweathermap.org/data/3.0/onecall?lat=<LAT>&lon=<LON>&exclude=alerts&units=metric&appid=<KEY>`
+- `!secret wifi_ssid` and `!secret wifi_password` resolve from `secrets.yaml`
+  (not committed — see `firmware/.gitignore`). The OWM One Call URL is built
+  inline from `!secret own_api_key`, `!secret own_lat`, and `!secret own_lon`;
+  AQI is fetched from the AirNow `ziplatlong` endpoint using a **separate**
+  `!secret airnow_api_key` (URL templated inline). `own_lat`/`own_lon` are shared
+  between the OWM and AirNow requests.
 
 ## Editing the weather page
 
@@ -77,6 +79,18 @@ The firmware is a thin overlay on the upstream transit-tracker package:
   together.
 - Fonts are loaded from **pinned upstream commits** via raw GitHub URLs. Changing
   a font file means updating the commit hash in the URL.
+- **AQI (AirNow):** the device fetches the AirNow `ziplatlong` JSON on
+  `${owm_poll_interval}` (same interval as OWM) using `own_lat`/`own_lon` and a
+  separate `airnow_api_key`. The lambda takes the **max `nowcastAQI`** across the
+  returned pollutants and publishes it to `sensor.aqi`. On the display, when
+  `AQI >= aqi_mask_threshold` (default `51`, i.e. the first yellow tier) the
+  top-left icon is replaced with the colored `\U000F1587` mask glyph
+  (`face-mask-outline`); the color follows the EPA AQI bands
+  (green ≤50, yellow ≤100, orange ≤150, red ≤200, purple ≤300, maroon 301+).
+  Below the threshold the normal weather icon is shown. The exact AQI number is
+  exposed via `sensor.aqi` (visible in Home Assistant); there is no room for the
+  digits on-device alongside the mask. Add `"\U000F1587"` to the `icon_font`
+  glyph list and the EPA-band colors to the `color:` block when enabling.
 
 ## Home Assistant setup
 
@@ -103,7 +117,7 @@ The recommended ESPHome device YAML is:
     transit_tracker:
       font_id: pixolletta   # forwarded to the upstream package
 
-and `secrets.yaml` must contain `wifi_ssid`, `wifi_password`, and `owm_url`.
+and `secrets.yaml` must contain `wifi_ssid`, `wifi_password`, `own_api_key`, `own_lat`, `own_lon`, and `airnow_api_key`.
 
 The (deprecated) blueprint polled OpenWeatherMap on a time pattern and wrote rain
 values, descriptions, and high/low temps into the input helpers, which the ESPHome
