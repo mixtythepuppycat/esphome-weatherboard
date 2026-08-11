@@ -25,7 +25,7 @@ There is no lint/format step. Verification = compiling firmware in ESPHome.
 To compile headlessly (CI or a local container without the dashboard):
 
 ```sh
-# secrets.yaml (wifi_ssid, wifi_password, own_api_key, own_lat, own_lon, airnow_api_key) must sit at the repo root.
+# secrets.yaml (wifi_ssid, wifi_password, owm_base_url, owm_api_key, owm_lat, owm_lon, airnow_base_url, airnow_api_key) must sit at the repo root.
 docker run --rm -v /cache \
   -v "${PWD}:/config" -w /config \
   ghcr.io/esphome/esphome:2026.6.5 compile firmware/transit-weatherboard.yaml
@@ -62,10 +62,14 @@ The firmware is a thin overlay on the upstream transit-tracker package:
   it with a remote URL + custom glyph set.
 - `!secret wifi_ssid` and `!secret wifi_password` resolve from `secrets.yaml`
   (not committed — see `firmware/.gitignore`). The OWM One Call URL is built
-  inline from `!secret own_api_key`, `!secret own_lat`, and `!secret own_lon`;
-  AQI is fetched from the AirNow `ziplatlong` endpoint using a **separate**
-  `!secret airnow_api_key` (URL templated inline). `own_lat`/`own_lon` are shared
-  between the OWM and AirNow requests.
+  inline from `!secret owm_base_url` (API origin, e.g.
+  `https://api.openweathermap.org`; in test mode re-route to a local emulator
+  like `http://<lan-ip>:8080`), plus `!secret owm_api_key`, `!secret owm_lat`,
+  and `!secret owm_lon`. AQI is fetched from the AirNow `ziplatlong` endpoint
+  using a **separate** `!secret airnow_base_url` and `!secret airnow_api_key`
+  (URL templated inline). `owm_lat`/`owm_lon` are shared between the OWM and
+  AirNow requests. A test fixture set + emulated server live in `test/`
+  (see `test/README.md`).
 
 ## Editing the weather page
 
@@ -117,7 +121,7 @@ The recommended ESPHome device YAML is:
     transit_tracker:
       font_id: pixolletta   # forwarded to the upstream package
 
-and `secrets.yaml` must contain `wifi_ssid`, `wifi_password`, `own_api_key`, `own_lat`, `own_lon`, and `airnow_api_key`.
+and `secrets.yaml` must contain `wifi_ssid`, `wifi_password`, `owm_base_url`, `owm_api_key`, `owm_lat`, `owm_lon`, `airnow_base_url`, and `airnow_api_key`.
 
 The (deprecated) blueprint polled OpenWeatherMap on a time pattern and wrote rain
 values, descriptions, and high/low temps into the input helpers, which the ESPHome

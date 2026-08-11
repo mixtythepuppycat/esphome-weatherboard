@@ -9,6 +9,9 @@
 #   wifi_ssid / wifi_password        (existing)
 #   owm_api_key                      OpenWeatherMap One Call 3.0 key (built into the OWM URL inline)
 #   owm_lat / owm_lon                observer lat/long (shared by OWM and AirNow)
+#   owm_base_url / airnow_base_url   API origins, e.g. "https://api.openweathermap.org"
+#                                    and "https://www.airnowapi.org". In test mode point
+#                                    these at a local emulator (http://<devip>:8080).
 #   airnow_api_key                   AirNow API key (separate from the OWM key) for AQI
 #
 # The weather icon glyph set is selected from current.weather.id (which mirrors the
@@ -23,7 +26,9 @@ substitutions:
   owm_api_key: !secret owm_api_key
   owm_lat: !secret owm_lat
   owm_lon: !secret owm_lon
+  owm_base_url: !secret owm_base_url
   airnow_api_key: !secret airnow_api_key
+  airnow_base_url: !secret airnow_base_url
   aqi_mask_threshold: "51"     # replace the weather icon with the colored AQI mask when AQI >= this (51 = first yellow tier)
 
 # Transit Tracker Section
@@ -118,7 +123,7 @@ interval:
             - lambda: 'return id(sntp_time).now().is_valid();'
           then:
             - http_request.get:
-                url: https://api.openweathermap.org/data/3.0/onecall?lat=${owm_lat}&lon=${owm_lon}&exclude=alerts&units=imperial&appid=${owm_api_key}
+                url: ${owm_base_url}/data/3.0/onecall?lat=${owm_lat}&lon=${owm_lon}&exclude=alerts&units=imperial&appid=${owm_api_key}
                 max_response_buffer_size: 64kb
                 capture_response: true
                 request_headers:
@@ -145,7 +150,7 @@ interval:
                           id(owm_today_desc).publish_state(data.today_desc.c_str());
                         }
             - http_request.get:
-                url: https://www.airnowapi.org/aq/observation/current/ziplatlong/?format=application/json&latitude=${owm_lat}&longitude=${owm_lon}&API_KEY=${airnow_api_key}
+                url: ${airnow_base_url}/aq/observation/current/ziplatlong/?format=application/json&latitude=${owm_lat}&longitude=${owm_lon}&API_KEY=${airnow_api_key}
                 max_response_buffer_size: 8kb
                 capture_response: true
                 request_headers:

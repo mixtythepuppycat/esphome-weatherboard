@@ -1,0 +1,21 @@
+{
+  "_comment": "Each preset fully determines the emulator state. Weather-glyph presets keep aqi=30 so the glyph is visible; AQI-band presets use a clear sky so the colored mask is the only top-left icon.",
+  "Clear day":          { "weather_id": 800, "icon_code": "d", "current_temp": 70.1, "today_high": 76.0, "today_low": 56.2, "uvi": 0,   "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "Clear night":        { "weather_id": 800, "icon_code": "n", "current_temp": 58.3, "today_high": 76.0, "today_low": 56.2, "uvi": 0,   "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "Partly cloudy":      { "weather_id": 801, "icon_code": "d", "current_temp": 68.0, "today_high": 74.0, "today_low": 59.0, "uvi": 4,   "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "Overcast":           { "weather_id": 803, "icon_code": "d", "current_temp": 66.5, "today_high": 70.0, "today_low": 62.0, "uvi": 3,   "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "Light rain":         { "weather_id": 500, "icon_code": "d", "current_temp": 62.0, "today_high": 68.0, "today_low": 57.0, "uvi": 2,   "aqi": 30, "rain_intensity": 1, "rain_shape": "steady_this_hour", "tz_offset": -25200 },
+  "Heavy rain":         { "weather_id": 502, "icon_code": "d", "current_temp": 59.0, "today_high": 63.0, "today_low": 55.0, "uvi": 1,   "aqi": 30, "rain_intensity": 4, "rain_shape": "steady_this_hour", "tz_offset": -25200 },
+  "Storm":              { "weather_id": 201, "icon_code": "d", "current_temp": 61.0, "today_high": 66.0, "today_low": 58.0, "uvi": 1,   "aqi": 30, "rain_intensity": 5, "rain_shape": "steady_this_hour", "tz_offset": -25200 },
+  "Snow":               { "weather_id": 601, "icon_code": "d", "current_temp": 31.0, "today_high": 36.0, "today_low": 27.0, "uvi": 2,   "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "Snowy-rainy":        { "weather_id": 511, "icon_code": "d", "current_temp": 38.0, "today_high": 42.0, "today_low": 33.0, "uvi": 1,   "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "Hail":               { "weather_id": 906, "icon_code": "d", "current_temp": 46.0, "today_high": 55.0, "today_low": 42.0, "uvi": 1,   "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "Windy":              { "weather_id": 905, "icon_code": "d", "current_temp": 64.0, "today_high": 69.0, "today_low": 57.0, "uvi": 0,   "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "High UV":            { "weather_id": 800, "icon_code": "d", "current_temp": 78.0, "today_high": 88.0, "today_low": 68.0, "uvi": 11,  "aqi": 30, "rain_intensity": 0, "rain_shape": "dry",            "tz_offset": -25200 },
+  "AQI good (green)":   { "weather_id": 800, "icon_code": "d", "current_temp": 70.1, "today_high": 76.0, "today_low": 56.2, "uvi": 0,   "aqi": 30,  "rain_intensity": 0, "rain_shape": "dry", "tz_offset": -25200 },
+  "AQI moderate (yellow)":  { "weather_id": 800, "icon_code": "d", "current_temp": 70.1, "today_high": 76.0, "today_low": 56.2, "uvi": 0, "aqi": 75,  "rain_intensity": 0, "rain_shape": "dry", "tz_offset": -25200 },
+  "AQI orange":         { "weather_id": 800, "icon_code": "d", "current_temp": 70.1, "today_high": 76.0, "today_low": 56.2, "uvi": 0,   "aqi": 145, "rain_intensity": 0, "rain_shape": "dry", "tz_offset": -25200 },
+  "AQI red":            { "weather_id": 800, "icon_code": "d", "current_temp": 70.1, "today_high": 76.0, "today_low": 56.2, "uvi": 0,   "aqi": 180, "rain_intensity": 0, "rain_shape": "dry", "tz_offset": -25200 },
+  "AQI purple":         { "weather_id": 800, "icon_code": "d", "current_temp": 70.1, "today_high": 76.0, "today_low": 56.2, "uvi": 0,   "aqi": 250, "rain_intensity": 0, "rain_shape": "dry", "tz_offset": -25200 },
+  "AQI maroon (hazardous)": { "weather_id": 800, "icon_code": "d", "current_temp": 70.1, "today_high": 76.0, "today_low": 56.2, "uvi": 0, "aqi": 350, "rain_intensity": 0, "rain_shape": "dry", "tz_offset": -25200 }
+}

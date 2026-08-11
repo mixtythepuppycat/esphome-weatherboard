@@ -1,2 +1,6 @@
 /.esphome/
 secrets.yaml
+
+# Test emulator artifacts (firmware/secrets.yaml is ignored by firmware/.gitignore)
+/test/static/
+/test/__pycache__/
