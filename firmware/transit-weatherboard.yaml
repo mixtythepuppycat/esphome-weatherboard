@@ -16,7 +16,7 @@
 # see the glyph map in the weather_page lambda below.
 
 substitutions:
-  owm_poll_interval: "5min"      # 288 calls/day; OWM One Call 3.0 free tier = 1000/day
+  owm_poll_interval: "2min"      # 288 calls/day; OWM One Call 3.0 free tier = 1000/day
   owm_rain_threshold: "0.0"      # mm/h — a 5-min batch averaging <= this is treated as dry
   owm_graph_scale: "1"           # multiplier applied to each graph bar height
   owm_uv_threshold: "6"          # UV index above which "UV N" is shown on a dry day
@@ -118,7 +118,7 @@ interval:
             - lambda: 'return id(sntp_time).now().is_valid();'
           then:
             - http_request.get:
-                url: https://api.openweathermap.org/data/3.0/onecall?lat=${owm_lat}&lon=${owm_lon}&exclude=alerts&units=metric&appid=${owm_api_key}
+                url: https://api.openweathermap.org/data/3.0/onecall?lat=${owm_lat}&lon=${owm_lon}&exclude=alerts&units=imperial&appid=${owm_api_key}
                 max_response_buffer_size: 64kb
                 capture_response: true
                 request_headers:
