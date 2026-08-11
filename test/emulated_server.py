@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
 import time
 from datetime import datetime, timezone
@@ -207,7 +208,7 @@ def build_owm():
         dt = now + i * 60
         p = 0.0
         if shape == "steady_this_hour":
-            p = intensity
+            p = intensity + random.uniform(0.0, 10.0)  # slight jitter
         elif shape == "starts_in_10" and i >= 10:
             p = intensity
         elif shape == "ending_in_10" and i < 50:

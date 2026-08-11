@@ -9,9 +9,6 @@
 #   wifi_ssid / wifi_password        (existing)
 #   owm_api_key                      OpenWeatherMap One Call 3.0 key (built into the OWM URL inline)
 #   owm_lat / owm_lon                observer lat/long (shared by OWM and AirNow)
-#   owm_base_url / airnow_base_url   API origins, e.g. "https://api.openweathermap.org"
-#                                    and "https://www.airnowapi.org". In test mode point
-#                                    these at a local emulator (http://<devip>:8080).
 #   airnow_api_key                   AirNow API key (separate from the OWM key) for AQI
 #
 # The weather icon glyph set is selected from current.weather.id (which mirrors the
@@ -19,17 +16,14 @@
 # see the glyph map in the weather_page lambda below.
 
 substitutions:
-  owm_poll_interval: "2min"      # 288 calls/day; OWM One Call 3.0 free tier = 1000/day
-  owm_rain_threshold: "0.0"      # mm/h — a 5-min batch averaging <= this is treated as dry
-  owm_graph_scale: "1"           # multiplier applied to each graph bar height
-  owm_uv_threshold: "6"          # UV index above which "UV N" is shown on a dry day
   owm_api_key: !secret owm_api_key
   owm_lat: !secret owm_lat
   owm_lon: !secret owm_lon
-  owm_base_url: !secret owm_base_url
   airnow_api_key: !secret airnow_api_key
-  airnow_base_url: !secret airnow_base_url
-  aqi_mask_threshold: "51"     # replace the weather icon with the colored AQI mask when AQI >= this (51 = first yellow tier)
+  owm_poll_interval: "3min"   # OWM One Call 3.0 free tier = 1000/day
+# In test mode point these at a local emulator (http://<devip>:8080).
+  owm_api_host: "https://api.openweathermap.org"
+  airnow_api_host: "https://www.airnowapi.org"
 
 # Transit Tracker Section
 packages:
@@ -113,6 +107,50 @@ text_sensor:
   - platform: template
     id: owm_today_desc        # "No rain today" | "Rain today …" | "Storm today …" | "UV N"
 
+number:
+  # replace the weather icon with the colored AQI mask when AQI >= this (51 = first yellow tier)
+  - platform: template
+    name: "AQI Threshold"
+    id: aqi_mask_threshold
+    min_value: 51
+    max_value: 250
+    step: 1
+    initial_value: 51
+    restore_value: true
+    optimistic: true
+    unit_of_measurement: "AQI"
+  # multiplier applied to each graph bar height
+  - platform: template
+    name: "Rain Graph Scale"
+    id: owm_graph_scale
+    min_value: 0.1
+    max_value: 10
+    step: 0.1
+    initial_value: 3
+    restore_value: true
+    optimistic: true
+  # UV index above which "UV N" is shown on a dry day
+  - platform: template
+    name: "UV Threshold"
+    id: owm_uv_threshold
+    min_value: 0
+    max_value: 10
+    step: 1
+    initial_value: 6
+    restore_value: true
+    optimistic: true
+  # mm/h — a 5-min batch averaging <= this is treated as dry
+  - platform: template
+    name: "Rain Threshold"
+    id: owm_rain_threshold
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    initial_value: 0.1
+    restore_value: true
+    optimistic: true
+    unit_of_measurement: "mm/h"
+
 # Fetch weather directly from OWM. The first real fetch is deferred until SNTP
 # time is valid (guarded below) so the today-summary timing math is grounded.
 interval:
@@ -123,7 +161,7 @@ interval:
             - lambda: 'return id(sntp_time).now().is_valid();'
           then:
             - http_request.get:
-                url: ${owm_base_url}/data/3.0/onecall?lat=${owm_lat}&lon=${owm_lon}&exclude=alerts&units=imperial&appid=${owm_api_key}
+                url: "${owm_api_host}/data/3.0/onecall?lat=${owm_lat}&lon=${owm_lon}&exclude=alerts&units=imperial&appid=${owm_api_key}"
                 max_response_buffer_size: 64kb
                 capture_response: true
                 request_headers:
@@ -135,7 +173,7 @@ interval:
                           ESP_LOGE("owm", "One Call API HTTP %d", response->status_code);
                           return;
                         }
-                        OwmConfig cfg{ (float) ${owm_rain_threshold}, (float) ${owm_graph_scale}, (float) ${owm_uv_threshold} };
+                        OwmConfig cfg{ (float) id(owm_rain_threshold).state, (float) id(owm_graph_scale).state, (float) id(owm_uv_threshold).state };
                         OwmData data;
                         if (parse_owm(body, data, cfg, (long) id(sntp_time).now().timestamp)) {
                           id(owm_current_temp).publish_state(data.current_temp);
@@ -150,7 +188,7 @@ interval:
                           id(owm_today_desc).publish_state(data.today_desc.c_str());
                         }
             - http_request.get:
-                url: ${airnow_base_url}/aq/observation/current/ziplatlong/?format=application/json&latitude=${owm_lat}&longitude=${owm_lon}&API_KEY=${airnow_api_key}
+                url: "${airnow_api_host}/aq/observation/current/ziplatlong/?format=application/json&latitude=${owm_lat}&longitude=${owm_lon}&API_KEY=${airnow_api_key}"
                 max_response_buffer_size: 8kb
                 capture_response: true
                 request_headers:
@@ -181,9 +219,9 @@ display:
           const char* icon;
           auto icon_color = COLOR_ON;
           float aqi = id(aqi_value).state;
-          bool show_aqi_mask = !isnan(aqi) && (aqi >= (float) ${aqi_mask_threshold});
+          bool show_aqi_mask = !isnan(aqi) && (aqi >= (float) id(aqi_mask_threshold).state);
           if (show_aqi_mask) {
-            icon = "\U000F1587";
+            icon = "\U000F1586";
             if (aqi <= 50)       icon_color = id(color_green);
             else if (aqi <= 100) icon_color = id(color_yellow);
             else if (aqi <= 150) icon_color = id(color_orange);
@@ -304,7 +342,7 @@ font:
       - "\U000F067E" # weather-lightning-rainy
       - "\U000F059E" # weather-windy-variant
       - "\U000F0F2F" # weather-exceptional
-      - "\U000F1587" # air-quality mask (face-mask-outline) — shown colored when AQI >= threshold
+      - "\U000F1586" # air-quality mask (face-mask) — shown colored when AQI >= threshold
 
 color:
   - id: color_red
