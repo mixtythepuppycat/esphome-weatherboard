@@ -92,13 +92,10 @@ The firmware is a thin overlay on the upstream transit-tracker package:
   digits on-device alongside the mask. Add `"\U000F1587"` to the `icon_font`
   glyph list and the EPA-band colors to the `color:` block when enabling.
 
-## Home Assistant setup
-
-Home Assistant is used only for **transit data and OTA uploads** (via the
-upstream transit-tracker package's `api:`/`ota:`). **Weather is processed
-entirely on-device**: the firmware fetches the OpenWeatherMap One Call 3.0 API
-and the AirNow AQI endpoint directly from the ESP32 using `http_request`
-(schedule governed by `${owm_poll_interval}`).
+**Weather is processed entirely on-device**: the
+firmware fetches the OpenWeatherMap One Call 3.0 API and the AirNow AQI endpoint
+directly from the ESP32 using `http_request` (schedule governed by
+`${owm_poll_interval}`).
 
 The recommended ESPHome device YAML is:
 
