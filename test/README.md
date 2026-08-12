@@ -1,14 +1,14 @@
 # Weatherboard Emulator
 
-A standalone Flask server that emulates the OpenWeatherMap One Call 3.0 and
+A standalone Flask server that emulates the OpenWeatherMap One Call 4.0 and
 AirNow `ziplatlong` APIs so you can visually verify every weather-board display
 mode against the real firmware — without touching the live APIs.
 
 ## What it does
 
 `emulated_server.py` keeps an in-memory "weather state" and, on each request
-from the ESP32, assembles a valid OWM One Call 3.0 body and an AirNow array
-from that state. A single-page web UI (`/`) lets you pick a preset or tweak any
+from the ESP32, assembles valid OWM One Call 4.0 bodies (one per endpoint) and
+an AirNow array from that state. A single-page web UI (`/`) lets you pick a preset or tweak any
 value (weather id, day/night, current temp, today H/L, UV, AQI, rain intensity,
 rain shape, tz offset). Changes take effect on the next firmware poll.
 
@@ -45,8 +45,14 @@ python3 test/emulated_server.py --port 8080
 
 > For faster visual feedback, temporarily lower `owm_poll_interval` in
 > `firmware/transit-weatherboard.yaml` (e.g. `15s`) while testing. Revert to the
-> default `2min` for real use. The `*_api_host` substitution defaults to the
+> default `3min` for real use. The `*_api_host` substitution defaults to the
 > real API origins in production; only your device yaml overrides them for test.
+> The firmware fetches on two tiered intervals: `${owm_poll_interval}` (3 min,
+> now-cast: current + 1-min timeline) and `${owm_forecast_interval}` (15 min,
+> forecast: 1-hour + 1-day timeline + AirNow). **Both intervals are gated on
+> `light.is_on: display_brightness`** so fetches are skipped during the nightly
+> off-window when the display is off (the `display_brightness` light comes from
+> the upstream transit-tracker package).
 
 ## Route map
 
@@ -57,7 +63,10 @@ python3 test/emulated_server.py --port 8080
 | POST | `/state` | JSON body merges into state (partial merge OK) |
 | GET | `/scenarios.json` | preset definitions |
 | GET | `/last` | timestamp + snapshot of the most recent firmware fetch |
-| GET | `/data/3.0/onecall` | assembled OWM One Call 3.0 JSON |
+| GET | `/data/4.0/onecall/current` | assembled OWM One Call 4.0 current-conditions JSON |
+| GET | `/data/4.0/onecall/timeline/1min` | assembled OWM One Call 4.0 1-min timeline JSON (rain bars) |
+| GET | `/data/4.0/onecall/timeline/1h` | assembled OWM One Call 4.0 1-hour timeline JSON (today summary) |
+| GET | `/data/4.0/onecall/timeline/1day` | assembled OWM One Call 4.0 1-day timeline JSON (today H/L + POP) |
 | GET | `/aq/observation/current/ziplatlong` | assembled AirNow array |
 
 The OWM and AirNow routes ignore query strings; they match by path suffix so the
@@ -104,7 +113,7 @@ weather glyph when `aqi ≥ 51`.
   "Rain in 10", `ending_in_10` → "Ending in 50". Bars are anchored to real
   wall-clock time, so they advance as the device polls.
 - **Today-desc** is driven by the hourly block: if the weather id is a
-  rain-state (see `parse_owm` in `firmware/weather_logic.h`) and
+  rain-state (see `parse_owm_hourly` in `firmware/weather_logic.h`) and
   `rain_intensity > 0`, hourly rain is injected so the firmware prints
   "Rain today …" / "Storm today …". For non-rain presets (or AQI presets) it
   stays "No rain today" or "UV N".
@@ -118,6 +127,10 @@ weather glyph when `aqi ≥ 51`.
 - The firmware only polls once SNTP time is valid (`sntp_time` on the device).
   In test mode the device gets real time from your NTP server, so no mock time
   service is required.
+- Both the now-cast (3 min) and forecast (15 min) intervals are additionally
+  gated on `light.is_on: display_brightness`, so no weather fetches occur while
+  the display is off. The `display_brightness` light is defined by the upstream
+  transit-tracker package.
 - A preset with `aqi ≥ 51` will show the colored mask *instead of* the weather
   glyph in the top-left — that is the real firmware behaviour, not a server
   limitation. The AQI-band presets keep the weather clear (id 800) so only the

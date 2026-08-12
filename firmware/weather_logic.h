@@ -40,34 +40,41 @@ struct OwmData {
 };
 
 // ---------------------------------------------------------------------------
-// Parse an OWM One Call 3.0 JSON response body into OwmData.
-// now_ts  — current unix timestamp (from sntp_time) so today-summary timing
-//            is grounded even when the SNTP guard has already passed.
+// Parse an OWM One Call 4.0 JSON response. The 3.0 single-endpoint API was
+// split into 4 separate endpoints, so parsing is split into 4 functions that
+// each consume one endpoint's `data[]` array. All share the same top-level
+// `timezone_offset` field.
 // Returns true on success; logs and returns false on parse error.
 // ---------------------------------------------------------------------------
-inline bool parse_owm(const std::string& body, OwmData& data,
-                      const OwmConfig& cfg, long now_ts) {
+inline bool parse_owm_current(const std::string& body, OwmData& data) {
   auto doc = esphome::json::parse_json(body);
   if (doc.isNull() || doc.overflowed()) {
-    ESP_LOGE("owm", "One Call JSON parse failed (len=%u)", (unsigned) body.length());
+    ESP_LOGE("owm", "Current weather JSON parse failed (len=%u)", (unsigned) body.length());
     return false;
   }
+  JsonArray data_arr = doc["data"].as<JsonArray>();
+  if (data_arr.size() == 0) {
+    ESP_LOGW("owm", "Current weather: empty data array in response");
+    return false;
+  }
+  data.tz = (long) doc["timezone_offset"];
+  data.current_temp = (float) data_arr[0]["temp"];
+  data.current_uvi  = (float)(data_arr[0]["uvi"] | 0.0);
+  data.weather_id   = (int)  data_arr[0]["weather"][0]["id"];
+  data.icon_code    =         data_arr[0]["weather"][0]["icon"].as<std::string>();
+  return true;
+}
 
+// --- 1-min timeline: 5-minute batches, threshold on the batch average ---
+inline bool parse_owm_minute(const std::string& body, OwmData& data, const OwmConfig& cfg) {
+  auto doc = esphome::json::parse_json(body);
+  if (doc.isNull() || doc.overflowed()) {
+    ESP_LOGE("owm", "1-min timeline JSON parse failed (len=%u)", (unsigned) body.length());
+    return false;
+  }
   data.tz = (long) doc["timezone_offset"];
 
-  // --- current ---
-  data.current_temp = (float) doc["current"]["temp"];
-  data.current_uvi  = (float)(doc["current"]["uvi"] | 0.0);
-  data.weather_id   = (int)  doc["current"]["weather"][0]["id"];
-  data.icon_code    =         doc["current"]["weather"][0]["icon"].as<std::string>();
-
-  // --- today (daily[0]) ---
-  data.today_high  = (float) doc["daily"][0]["temp"]["max"];
-  data.today_low   = (float) doc["daily"][0]["temp"]["min"];
-  data.today_pop   = (float)(doc["daily"][0]["pop"] | 0.0);
-
-  // --- minutely: 5-minute batches, threshold on the batch average ---
-  auto minutely = doc["minutely"].as<JsonArray>();
+  auto minutely = doc["data"].as<JsonArray>();
   size_t n = minutely.size();
   for (size_t b = 0; b < n; b += 5) {
     float sum = 0.0f;
@@ -116,13 +123,31 @@ inline bool parse_owm(const std::string& body, OwmData& data,
     data.next_hour_desc = "Rain in " + std::to_string(first_rain);
   }
 
+  return true;
+}
+
+// --- 1-hour timeline: today-summary timing, rain/storm detection, UV fallback ---
+// now_ts    — current unix timestamp (from sntp_time) so today-summary timing
+//             is grounded even when the SNTP guard has already passed.
+// current_uvi — most recent current UV (from owm_current_uv); may be NAN on
+//               the very first forecast cycle, in which case the UV fallback
+//               is gracefully skipped (NAN > threshold is false).
+inline bool parse_owm_hourly(const std::string& body, OwmData& data,
+                             const OwmConfig& cfg, long now_ts, float current_uvi) {
+  auto doc = esphome::json::parse_json(body);
+  if (doc.isNull() || doc.overflowed()) {
+    ESP_LOGE("owm", "1-hour timeline JSON parse failed (len=%u)", (unsigned) body.length());
+    return false;
+  }
+  data.tz = (long) doc["timezone_offset"];
+
   // --- today summary (hourly timing preserved) ---
   // rain_states & storm mirror HA's OpenWeatherMap condition map.
   long now_local  = now_ts + data.tz;
   long today_start = (now_local / 86400) * 86400;
   long today_end   = today_start + 86400 - 1;
   data.today_desc = "No rain today";
-  auto hourly = doc["hourly"].as<JsonArray>();
+  auto hourly = doc["data"].as<JsonArray>();
   for (auto h : hourly) {
     long dt = (long) h["dt"];
     long local_dt = dt + data.tz;
@@ -154,12 +179,31 @@ inline bool parse_owm(const std::string& body, OwmData& data,
       break;
     }
   }
-  if (data.current_uvi > cfg.uv_threshold && data.today_desc == "No rain today") {
+  if (current_uvi > cfg.uv_threshold && data.today_desc == "No rain today") {
     char ub[16];
-    snprintf(ub, sizeof(ub), "UV %.0f", (double) data.current_uvi);
+    snprintf(ub, sizeof(ub), "UV %.0f", (double) current_uvi);
     data.today_desc = std::string(ub);
   }
 
+  return true;
+}
+
+// --- 1-day timeline: today high/low + POP ---
+inline bool parse_owm_daily(const std::string& body, OwmData& data) {
+  auto doc = esphome::json::parse_json(body);
+  if (doc.isNull() || doc.overflowed()) {
+    ESP_LOGE("owm", "1-day timeline JSON parse failed (len=%u)", (unsigned) body.length());
+    return false;
+  }
+  JsonArray data_arr = doc["data"].as<JsonArray>();
+  if (data_arr.size() == 0) {
+    ESP_LOGW("owm", "1-day timeline: empty data array in response");
+    return false;
+  }
+  data.tz = (long) doc["timezone_offset"];
+  data.today_high  = (float) data_arr[0]["temp"]["max"];
+  data.today_low   = (float) data_arr[0]["temp"]["min"];
+  data.today_pop   = (float)(data_arr[0]["pop"] | 0.0);
   return true;
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emulated OpenWeatherMap One Call 3.0 + AirNow `ziplatlong` server.
+"""Emulated OpenWeatherMap One Call 4.0 + AirNow `ziplatlong` server.
 
 Run with:  pip install flask   # then
            python3 emulated_server.py [--host 0.0.0.0] [--port 8080]
@@ -10,13 +10,17 @@ Serves:
   GET  /scenarios.json                     preset definitions
   GET  /last                               info about the most recent firmware fetch
   POST /state                              set one or more knobs (JSON body)
-  GET  /data/3.0/onecall?...               OWM One Call 3.0 body assembled from state
+  GET  /data/4.0/onecall/current        OWM One Call 4.0 current conditions
+  GET  /data/4.0/onecall/timeline/1min   OWM One Call 4.0 1-min timeline (rain bars)
+  GET  /data/4.0/onecall/timeline/1h     OWM One Call 4.0 1-hour timeline (today summary)
+  GET  /data/4.0/onecall/timeline/1day   OWM One Call 4.0 1-day timeline (today H/L + POP)
   GET  /aq/observation/current/ziplatlong?...  AirNow array assembled from state
 
 The firmware (firmware/transit-weatherboard.yaml) fetches these at
-`${owm_poll_interval}`. Override the `owm_api_host` / `airnow_api_host`
-substitutions in your device yaml (which includes this package) to point at
-this server's LAN address.
+`${owm_poll_interval}` (now-cast: current + 1min timeline) and
+`${owm_forecast_interval}` (forecast: 1h + 1day timeline + AirNow). Override the
+`owm_api_host` / `airnow_api_host` substitutions in your device yaml (which
+includes this package) to point at this server's LAN address.
 
 All JSON is regenerated on each request from the current in-memory state, so a
 knob change takes effect on the next firmware poll. Timestamps are anchored to
@@ -167,19 +171,19 @@ def tz_short_name(tz_offset):
 
 
 # --------------------------------------------------------------------------- #
-# JSON builders — faithful to what firmware/weather_logic.h expects
+# JSON builders — faithful to what firmware/weather_logic.h expects from
+# the OWM One Call 4.0 split endpoints. Each wraps its payload(s) in a
+# top-level `data: [...]` array alongside `timezone` / `timezone_offset`.
 # --------------------------------------------------------------------------- #
-def build_owm():
+def build_owm_current():
     with _state_lock:
         s = dict(state)
     now = int(time.time())
     tz = s["tz_offset"]
     now_local = now + tz
     today_start = (now_local // 86400) * 86400
-    today_end = today_start + 86399
     wid = s["weather_id"]
     icon = icon_for(wid, s["icon_code"])
-    is_rain = wid in RAIN_STATE_IDS
 
     # current
     current = {
@@ -200,6 +204,22 @@ def build_owm():
         "weather": [{"id": wid, "main": "Test", "description": "test sky", "icon": icon}],
     }
 
+    return {
+        "lat": s["tz_offset"] * 0.0001,  # cosmetic; ignored by firmware
+        "lon": 0.0,
+        "timezone": tz_short_name(tz),
+        "timezone_offset": tz,
+        "data": [current],
+        "alerts": [],
+    }
+
+
+def build_owm_minute():
+    with _state_lock:
+        s = dict(state)
+    now = int(time.time())
+    tz = s["tz_offset"]
+
     # minutely: 60 one-minute entries. The firmware batches these 5-at-a-time
     # and derives the next-hour description + 60 bar graph values from them.
     intensity = s["rain_intensity"]
@@ -215,6 +235,28 @@ def build_owm():
         elif shape == "ending_in_10" and i < 50:
             p = intensity
         minutely.append({"dt": dt, "precipitation": round(p, 3)})
+
+    return {
+        "lat": s["tz_offset"] * 0.0001,
+        "lon": 0.0,
+        "timezone": tz_short_name(tz),
+        "timezone_offset": tz,
+        "data": minutely,
+    }
+
+
+def build_owm_hourly():
+    with _state_lock:
+        s = dict(state)
+    now = int(time.time())
+    tz = s["tz_offset"]
+    now_local = now + tz
+    today_start = (now_local // 86400) * 86400
+    today_end = today_start + 86399
+    wid = s["weather_id"]
+    icon = icon_for(wid, s["icon_code"])
+    is_rain = wid in RAIN_STATE_IDS
+    intensity = s["rain_intensity"]
 
     # hourly: span the rest of today (local). Inject rain into the current +
     # near hours so the firmware's today-summary can say "Rain today …".
@@ -240,7 +282,8 @@ def build_owm():
             "weather": [{"id": wid, "main": "Test", "description": "test sky", "icon": icon}],
             "pop": 0.0,
         }
-        # The firmware's rain_threshold defaults to 0.0 in test secrets.
+        # The firmware's rain_threshold defaults to 0.1 (see the owm_rain_threshold
+        # number entity in firmware/transit-weatherboard.yaml).
         if intensity > 0.0 and is_rain and h < 4:
             entry["rain"] = {"1h": round(intensity * 2.5, 1)}
             entry["pop"] = 0.9
@@ -248,6 +291,26 @@ def build_owm():
         h += 1
         if h > 48:
             break
+
+    return {
+        "lat": s["tz_offset"] * 0.0001,
+        "lon": 0.0,
+        "timezone": tz_short_name(tz),
+        "timezone_offset": tz,
+        "data": hourly,
+    }
+
+
+def build_owm_daily():
+    with _state_lock:
+        s = dict(state)
+    now = int(time.time())
+    tz = s["tz_offset"]
+    now_local = now + tz
+    today_start = (now_local // 86400) * 86400
+    wid = s["weather_id"]
+    icon = icon_for(wid, s["icon_code"])
+    intensity = s["rain_intensity"]
 
     # daily[0] — the firmware reads temp.max/min and pop.
     daily0 = {
@@ -283,14 +346,11 @@ def build_owm():
     }
 
     return {
-        "lat": s["tz_offset"] * 0.0001,  # cosmetic; ignored by firmware
+        "lat": s["tz_offset"] * 0.0001,
         "lon": 0.0,
         "timezone": tz_short_name(tz),
         "timezone_offset": tz,
-        "current": current,
-        "minutely": minutely,
-        "hourly": hourly,
-        "daily": [daily0],
+        "data": [daily0],
     }
 
 
@@ -360,11 +420,29 @@ def last_fetch():
     })
 
 
-@app.route("/data/3.0/onecall")
-@app.route("/data/3.0/onecall/")
-def owm_onecall():
-    _record_fetch("/data/3.0/onecall")
-    return jsonify(build_owm())
+@app.route("/data/4.0/onecall/current")
+@app.route("/data/4.0/onecall/current/")
+def owm_current():
+    _record_fetch("/data/4.0/onecall/current")
+    return jsonify(build_owm_current())
+
+@app.route("/data/4.0/onecall/timeline/1min")
+@app.route("/data/4.0/onecall/timeline/1min/")
+def owm_minute():
+    _record_fetch("/data/4.0/onecall/timeline/1min")
+    return jsonify(build_owm_minute())
+
+@app.route("/data/4.0/onecall/timeline/1h")
+@app.route("/data/4.0/onecall/timeline/1h/")
+def owm_hourly():
+    _record_fetch("/data/4.0/onecall/timeline/1h")
+    return jsonify(build_owm_hourly())
+
+@app.route("/data/4.0/onecall/timeline/1day")
+@app.route("/data/4.0/onecall/timeline/1day/")
+def owm_daily():
+    _record_fetch("/data/4.0/onecall/timeline/1day")
+    return jsonify(build_owm_daily())
 
 
 @app.route("/aq/observation/current/ziplatlong")

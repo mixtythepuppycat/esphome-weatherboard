@@ -1,13 +1,17 @@
 # Weatherboard firmware overlay.
 #
-# Weather data is fetched DIRECTLY from the OpenWeatherMap One Call API (3.0)
+# Weather data is fetched DIRECTLY from the OpenWeatherMap One Call API (4.0)
 # via ESPHome's http_request component — no Home Assistant required for weather.
+# The 4.0 API splits the old 3.0 single endpoint into 4 focused endpoints;
+# this firmware issues 2 calls per 3-minute now-cast cycle (current + 1-min
+# timeline) and 2 calls per 15-minute forecast cycle (1-h + 1-day timeline +
+# AirNow AQI). Both intervals skip when the Display Brightness light is off.
 # The device still talks to Home Assistant (api/OTA/brightness/transit tracker
 # from the upstream transit-tracker package), but weather no longer depends on it.
 #
 # Required secrets (add to your secrets.yaml — never commit it):
 #   wifi_ssid / wifi_password        (existing)
-#   owm_api_key                      OpenWeatherMap One Call 3.0 key (built into the OWM URL inline)
+#   owm_api_key                      OpenWeatherMap One Call 4.0 key (built into the OWM URL inline)
 #   owm_lat / owm_lon                observer lat/long (shared by OWM and AirNow)
 #   airnow_api_key                   AirNow API key (separate from the OWM key) for AQI
 #
@@ -20,9 +24,10 @@ substitutions:
   owm_lat: !secret owm_lat
   owm_lon: !secret owm_lon
   airnow_api_key: !secret airnow_api_key
-  owm_poll_interval: "3min"   # OWM One Call 3.0 free tier = 1000/day
+  owm_poll_interval: "3min"   # OWM One Call 4.0 now-cast: current + 1min timeline
+  owm_forecast_interval: "15min"  # OWM One Call 4.0 forecast: 1h + 1day timeline + AirNow (does not count toward OWM 1000/day limit)
 # In test mode point these at a local emulator (http://<devip>:8080).
-  owm_api_host: "https://api.openweathermap.org"
+  owm_api_host: "https://api.openweathermap.org"  # /data/4.0/onecall/{current,timeline/1min,timeline/1h,timeline/1day}
   airnow_api_host: "https://www.airnowapi.org"
 
 # Transit Tracker Section
@@ -67,15 +72,15 @@ sensor:
   - platform: template
     id: owm_current_temp
     name: "Current Temperature"
-    unit_of_measurement: "°C"
+    unit_of_measurement: "°F"
   - platform: template
     id: owm_today_high_temp
     name: "Today High"
-    unit_of_measurement: "°C"
+    unit_of_measurement: "°F"
   - platform: template
     id: owm_today_low_temp
     name: "Today Low"
-    unit_of_measurement: "°C"
+    unit_of_measurement: "°F"
   - platform: template
     id: owm_today_rain_chance
     name: "Today Rain Chance"
@@ -151,18 +156,24 @@ number:
     optimistic: true
     unit_of_measurement: "mm/h"
 
-# Fetch weather directly from OWM. The first real fetch is deferred until SNTP
-# time is valid (guarded below) so the today-summary timing math is grounded.
+# Fetch weather directly from OWM One Call 4.0. Two tiered intervals keep us
+# under the 1000-call/day free-tier limit while refreshing now-cast faster:
+#  - now-cast (3 min): current + 1min timeline  (2 calls/cycle)
+#  - forecast (15 min): 1h + 1day timeline + AirNow (2 OWM + 1 AirNow/cycle)
+# Both are gated on SNTP validity + display power so we skip the nightly
+# off-window (display_brightness is a light.monochromatic from transit-tracker).
 interval:
+  # --- Now-cast: current conditions + 60-min rain bars ---
   - interval: ${owm_poll_interval}
     then:
       - if:
           condition:
             - lambda: 'return id(sntp_time).now().is_valid();'
+            - light.is_on: display_brightness
           then:
             - http_request.get:
-                url: "${owm_api_host}/data/3.0/onecall?lat=${owm_lat}&lon=${owm_lon}&exclude=alerts&units=imperial&appid=${owm_api_key}"
-                max_response_buffer_size: 64kb
+                url: "${owm_api_host}/data/4.0/onecall/current?lat=${owm_lat}&lon=${owm_lon}&units=imperial&appid=${owm_api_key}"
+                max_response_buffer_size: 32kb
                 capture_response: true
                 request_headers:
                   Accept: "application/json"
@@ -170,22 +181,82 @@ interval:
                   then:
                     - lambda: |-
                         if (response->status_code != 200) {
-                          ESP_LOGE("owm", "One Call API HTTP %d", response->status_code);
+                          ESP_LOGE("owm", "Current weather HTTP %d", response->status_code);
                           return;
                         }
-                        OwmConfig cfg{ (float) id(owm_rain_threshold).state, (float) id(owm_graph_scale).state, (float) id(owm_uv_threshold).state };
                         OwmData data;
-                        if (parse_owm(body, data, cfg, (long) id(sntp_time).now().timestamp)) {
+                        if (parse_owm_current(body, data)) {
                           id(owm_current_temp).publish_state(data.current_temp);
                           id(owm_current_uv).publish_state(data.current_uvi);
                           id(owm_weather_id).publish_state((float) data.weather_id);
                           id(owm_icon_code).publish_state(data.icon_code.c_str());
+                        }
+            - http_request.get:
+                url: "${owm_api_host}/data/4.0/onecall/timeline/1min?lat=${owm_lat}&lon=${owm_lon}&units=imperial&appid=${owm_api_key}"
+                max_response_buffer_size: 32kb
+                capture_response: true
+                request_headers:
+                  Accept: "application/json"
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          ESP_LOGE("owm", "1-min timeline HTTP %d", response->status_code);
+                          return;
+                        }
+                        OwmConfig cfg{ (float) id(owm_rain_threshold).state, (float) id(owm_graph_scale).state, (float) id(owm_uv_threshold).state };
+                        OwmData data;
+                        if (parse_owm_minute(body, data, cfg)) {
+                          id(owm_rain_values).publish_state(data.rain_csv.c_str());
+                          id(owm_next_hour_desc).publish_state(data.next_hour_desc.c_str());
+                        }
+          else:
+            - lambda: 'ESP_LOGD("owm", "SNTP invalid or display off; deferring now-cast fetch");'
+
+  # --- Forecast: 1h summary + 1day high/low/POP + AirNow AQI ---
+  - interval: ${owm_forecast_interval}
+    then:
+      - if:
+          condition:
+            - lambda: 'return id(sntp_time).now().is_valid();'
+            - light.is_on: display_brightness
+          then:
+            - http_request.get:
+                url: "${owm_api_host}/data/4.0/onecall/timeline/1h?lat=${owm_lat}&lon=${owm_lon}&units=imperial&appid=${owm_api_key}"
+                max_response_buffer_size: 32kb
+                capture_response: true
+                request_headers:
+                  Accept: "application/json"
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          ESP_LOGE("owm", "1-hour timeline HTTP %d", response->status_code);
+                          return;
+                        }
+                        OwmConfig cfg{ (float) id(owm_rain_threshold).state, (float) id(owm_graph_scale).state, (float) id(owm_uv_threshold).state };
+                        OwmData data;
+                        if (parse_owm_hourly(body, data, cfg, (long) id(sntp_time).now().timestamp, (float) id(owm_current_uv).state)) {
+                          id(owm_today_desc).publish_state(data.today_desc.c_str());
+                        }
+            - http_request.get:
+                url: "${owm_api_host}/data/4.0/onecall/timeline/1day?lat=${owm_lat}&lon=${owm_lon}&units=imperial&appid=${owm_api_key}"
+                max_response_buffer_size: 32kb
+                capture_response: true
+                request_headers:
+                  Accept: "application/json"
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          ESP_LOGE("owm", "1-day timeline HTTP %d", response->status_code);
+                          return;
+                        }
+                        OwmData data;
+                        if (parse_owm_daily(body, data)) {
                           id(owm_today_high_temp).publish_state(data.today_high);
                           id(owm_today_low_temp).publish_state(data.today_low);
                           id(owm_today_rain_chance).publish_state(data.today_pop * 100.0f);
-                          id(owm_rain_values).publish_state(data.rain_csv.c_str());
-                          id(owm_next_hour_desc).publish_state(data.next_hour_desc.c_str());
-                          id(owm_today_desc).publish_state(data.today_desc.c_str());
                         }
             - http_request.get:
                 url: "${airnow_api_host}/aq/observation/current/ziplatlong/?format=application/json&latitude=${owm_lat}&longitude=${owm_lon}&API_KEY=${airnow_api_key}"
@@ -205,7 +276,7 @@ interval:
                           id(aqi_value).publish_state((float) aqi);
                         }
           else:
-            - lambda: 'ESP_LOGD("owm", "SNTP not valid; deferring OWM fetch");'
+            - lambda: 'ESP_LOGD("owm", "Display off or SNTP invalid; deferring forecast fetch");'
 
 # The target display is 128x32 (two 64x32 panels, layout_cols: 2)
 display:
@@ -341,7 +412,7 @@ font:
       - "\U000F059D" # weather-windy
       - "\U000F067E" # weather-lightning-rainy
       - "\U000F059E" # weather-windy-variant
-      - "\U000F0F2F" # weather-exceptional
+      - "\U000F0F2F" # weather-cloudy-alert
       - "\U000F1586" # air-quality mask (face-mask) — shown colored when AQI >= threshold
 
 color:

@@ -80,22 +80,23 @@ The firmware is a thin overlay on the upstream transit-tracker package:
 - Fonts are loaded from **pinned upstream commits** via raw GitHub URLs. Changing
   a font file means updating the commit hash in the URL.
 - **AQI (AirNow):** the device fetches the AirNow `ziplatlong` JSON on
-  `${owm_poll_interval}` (same interval as OWM) using `own_lat`/`own_lon` and a
+  `${owm_forecast_interval}` (the 15-minute forecast interval) using `owm_lat`/`owm_lon` and a
   separate `airnow_api_key`. The lambda takes the **max `nowcastAQI`** across the
   returned pollutants and publishes it to `sensor.aqi`. On the display, when
   `AQI >= aqi_mask_threshold` (default `51`, i.e. the first yellow tier) the
-  top-left icon is replaced with the colored `\U000F1587` mask glyph
-  (`face-mask-outline`); the color follows the EPA AQI bands
+  top-left icon is replaced with the colored `\U000F1586` mask glyph
+  (`face-mask`); the color follows the EPA AQI bands
   (green ≤50, yellow ≤100, orange ≤150, red ≤200, purple ≤300, maroon 301+).
   Below the threshold the normal weather icon is shown. The exact AQI number is
   exposed via `sensor.aqi` (visible in Home Assistant); there is no room for the
-  digits on-device alongside the mask. Add `"\U000F1587"` to the `icon_font`
+  digits on-device alongside the mask. Add `"\U000F1586"` to the `icon_font`
   glyph list and the EPA-band colors to the `color:` block when enabling.
 
 **Weather is processed entirely on-device**: the
-firmware fetches the OpenWeatherMap One Call 3.0 API and the AirNow AQI endpoint
+firmware fetches the OpenWeatherMap One Call 4.0 API and the AirNow AQI endpoint
 directly from the ESP32 using `http_request` (schedule governed by
-`${owm_poll_interval}`).
+`${owm_poll_interval}` for the now-cast and `${owm_forecast_interval}` for the
+forecast, both gated on SNTP validity + `light.is_on: display_brightness`).
 
 The recommended ESPHome device YAML is:
 
@@ -109,4 +110,5 @@ and `secrets.yaml` must contain `wifi_ssid`, `wifi_password`, `owm_api_key`,
 `owm_lat`, `owm_lon`, and `airnow_api_key`. In test mode, redirect the
 `owm_api_host` and `airnow_api_host` substitutions (or point the API hosts at a
 local emulator) — see `test/README.md`. Tune the fetch cadence with the
-`owm_poll_interval` substitution.
+`owm_poll_interval` (now-cast) and `owm_forecast_interval` (forecast)
+substitutions.
