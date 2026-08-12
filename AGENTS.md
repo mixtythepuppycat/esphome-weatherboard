@@ -10,10 +10,6 @@ ESPHome.
 
 ```
 firmware/transit-weatherboard.yaml   # ESPHome YAML — the only source file
-ha/                                   # Home Assistant helper + blueprint YAML (Files in this folder are deprecated)
-  input_number.yaml                   # helpers: today_high_temp, today_low_temp, today_rain_chance
-  input_text.yaml                    # helpers: next_hour_rain_description, rain_values, today_precipitation_description
-  openweatherblueprint.yaml           # Blueprint that populates the helpers from OpenWeatherMap
 fonts/MaterialDesignIconsDesktop.ttf  # local icon font for weather glyphs
 start-esphome.sh                      # Docker entrypoint for the ESPHome dashboard
 ```
@@ -25,7 +21,7 @@ There is no lint/format step. Verification = compiling firmware in ESPHome.
 To compile headlessly (CI or a local container without the dashboard):
 
 ```sh
-# secrets.yaml (wifi_ssid, wifi_password, owm_base_url, owm_api_key, owm_lat, owm_lon, airnow_base_url, airnow_api_key) must sit at the repo root.
+# secrets.yaml (wifi_ssid, wifi_password, owm_api_key, owm_lat, owm_lon, airnow_api_key) must sit at the repo root.
 docker run --rm -v /cache \
   -v "${PWD}:/config" -w /config \
   ghcr.io/esphome/esphome:2026.6.5 compile firmware/transit-weatherboard.yaml
@@ -62,11 +58,11 @@ The firmware is a thin overlay on the upstream transit-tracker package:
   it with a remote URL + custom glyph set.
 - `!secret wifi_ssid` and `!secret wifi_password` resolve from `secrets.yaml`
   (not committed — see `firmware/.gitignore`). The OWM One Call URL is built
-  inline from `!secret owm_base_url` (API origin, e.g.
+  inline from the `${owm_api_host}` substitution (API origin, e.g.
   `https://api.openweathermap.org`; in test mode re-route to a local emulator
   like `http://<lan-ip>:8080`), plus `!secret owm_api_key`, `!secret owm_lat`,
   and `!secret owm_lon`. AQI is fetched from the AirNow `ziplatlong` endpoint
-  using a **separate** `!secret airnow_base_url` and `!secret airnow_api_key`
+  using a **separate** `${airnow_api_host}` substitution and `!secret airnow_api_key`
   (URL templated inline). `owm_lat`/`owm_lon` are shared between the OWM and
   AirNow requests. A test fixture set + emulated server live in `test/`
   (see `test/README.md`).
@@ -98,20 +94,11 @@ The firmware is a thin overlay on the upstream transit-tracker package:
 
 ## Home Assistant setup
 
-Weather is fetched **on-device** from the OpenWeatherMap One Call 3.0 API (see
-`!secret owm_url` + the `interval` HTTP fetch in the firmware), so the OpenWeatherMap
-*HA integration* and the `ha/openweatherblueprint.yaml` input helpers are
-**deprecated** for weather. Home Assistant is still used for **transit + OTA**
-via the upstream transit-tracker package (`api:`/`ota:`).
-
-The deprecated legacy steps (retained for existing installs) were:
-
-1. Add `ha/input_number.yaml` and `ha/input_text.yaml` to your
-   `configuration.yaml` (or an included file), then **reload YAML**. These
-   helpers must exist before the blueprint runs.
-2. Import `ha/openweatherblueprint.yaml` into Home Assistant. It requires
-   `homeassistant: min_version: "2026.2.3"` and the OpenWeatherMap integration in
-   One Call API 3.0 mode.
+Home Assistant is used only for **transit data and OTA uploads** (via the
+upstream transit-tracker package's `api:`/`ota:`). **Weather is processed
+entirely on-device**: the firmware fetches the OpenWeatherMap One Call 3.0 API
+and the AirNow AQI endpoint directly from the ESP32 using `http_request`
+(schedule governed by `${owm_poll_interval}`).
 
 The recommended ESPHome device YAML is:
 
@@ -121,10 +108,8 @@ The recommended ESPHome device YAML is:
     transit_tracker:
       font_id: pixolletta   # forwarded to the upstream package
 
-and `secrets.yaml` must contain `wifi_ssid`, `wifi_password`, `owm_base_url`, `owm_api_key`, `owm_lat`, `owm_lon`, `airnow_base_url`, and `airnow_api_key`.
-
-The (deprecated) blueprint polled OpenWeatherMap on a time pattern and wrote rain
-values, descriptions, and high/low temps into the input helpers, which the ESPHome
-firmware used to read via `homeassistant:` text/number sensor entities. The
-current firmware no longer reads those helpers; tune the fetch cadence with the
-`owm_poll_interval` substitution instead.
+and `secrets.yaml` must contain `wifi_ssid`, `wifi_password`, `owm_api_key`,
+`owm_lat`, `owm_lon`, and `airnow_api_key`. In test mode, redirect the
+`owm_api_host` and `airnow_api_host` substitutions (or point the API hosts at a
+local emulator) — see `test/README.md`. Tune the fetch cadence with the
+`owm_poll_interval` substitution.

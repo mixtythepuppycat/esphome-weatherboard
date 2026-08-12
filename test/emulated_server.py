@@ -14,8 +14,9 @@ Serves:
   GET  /aq/observation/current/ziplatlong?...  AirNow array assembled from state
 
 The firmware (firmware/transit-weatherboard.yaml) fetches these at
-`${owm_poll_interval}`. Point `owm_base_url` / `airnow_base_url` in your
-firmware/secrets.yaml (test copy) at this server's LAN address.
+`${owm_poll_interval}`. Override the `owm_api_host` / `airnow_api_host`
+substitutions in your device yaml (which includes this package) to point at
+this server's LAN address.
 
 All JSON is regenerated on each request from the current in-memory state, so a
 knob change takes effect on the next firmware poll. Timestamps are anchored to

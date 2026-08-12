@@ -20,29 +20,33 @@ rain shape, tz offset). Changes take effect on the next firmware poll.
 ## Quick start
 
 ```sh
-# 1. Configure test secrets (gitignored — never commit it)
-cp firmware/secrets.yaml.test.example firmware/secrets.yaml
-# Edit firmware/secrets.yaml:
+# 1. Create firmware/secrets.yaml (gitignored) with your Wi-Fi + API keys:
 #   wifi_ssid / wifi_password         your Wi-Fi
-#   owm_base_url / airnow_base_url    http://<your-lan-ip>:8080
-#                                     (NOT 127.0.0.1 — that is the device itself)
+#   owm_api_key / airnow_api_key      your OWM + AirNow keys
+#   owm_lat / owm_lon                 your lat/long
 
-# 2. Compile + flash the firmware (same image/flags as production)
+# 2. In your device yaml (which includes this package), override the API host
+#    substitutions to point at the emulator:
+#   owm_api_host:     "http://<your-lan-ip>:8080"
+#   airnow_api_host:  "http://<your-lan-ip>:8080"
+#                     (NOT 127.0.0.1 — that is the device itself)
+
+# 3. Compile + flash the firmware (same image/flags as production)
 docker run --rm -v /cache -v "${PWD}:/config" -w /config \
   ghcr.io/esphome/esphome:2026.6.5 run firmware/transit-weatherboard.yaml \
   --upload-port /dev/ttyUSB0        # or whatever your device port is
 
-# 3. Run the emulator on the same LAN
+# 4. Run the emulator on the same LAN
 python3 test/emulated_server.py --port 8080
 
-# 4. Drive the display
+# 5. Drive the display
 #    Open http://<your-lan-ip>:8080 in a browser.
 ```
 
 > For faster visual feedback, temporarily lower `owm_poll_interval` in
 > `firmware/transit-weatherboard.yaml` (e.g. `15s`) while testing. Revert to the
-> default `2min` for real use. On production secrets the `*_base_url` values stay
-> the real API origins; only `firmware/secrets.yaml` is swapped for test.
+> default `2min` for real use. The `*_api_host` substitution defaults to the
+> real API origins in production; only your device yaml overrides them for test.
 
 ## Route map
 
