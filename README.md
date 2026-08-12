@@ -23,7 +23,11 @@ packages:
 transit_tracker:
   See https://transit-tracker.eastsideurbanism.org/configurator for configuration values 
   font_id: pixolletta   # forwarded to the upstream package
+
 ```
+
+You may need to download and place [weather_logic.h](https://github.com/mixtythepuppycat/esphome-weatherboard/blob/master/firmware/weather_logic.h) in your firmware build directory
+
 
 Additionally add the following to your `secrets.yaml`:
 
