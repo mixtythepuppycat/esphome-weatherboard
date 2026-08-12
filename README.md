@@ -21,6 +21,7 @@ packages:
   transit_weatherboard: github://mixtythepuppycat/esphome-weatherboard/firmware/transit-weatherboard.yaml@main
 
 transit_tracker:
+  See https://transit-tracker.eastsideurbanism.org/configurator for configuration values 
   font_id: pixolletta   # forwarded to the upstream package
 ```
 
