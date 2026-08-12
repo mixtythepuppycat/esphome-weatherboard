@@ -6,36 +6,46 @@ Inspired by the [Transit Tracker](https://transit-tracker.eastsideurbanism.org) 
 ![Example of the future rain](images/future_rain.jpg)
 
 ## Requirements
+
 - A built display board. See Transit Tracker's excellent [build guide](https://transit-tracker.eastsideurbanism.org/docs/build-guide)
 - [ESPHome Device Builder](https://esphome.io/guides/getting_started_hassio/) environment. If you have docker setup, you can use the `start-esphome.sh` script to run the installer dashboard.
-- [Home Assistant](https://www.home-assistant.io/) setup with the [OpenWeatherMap integration](https://www.home-assistant.io/integrations/openweathermap) in One Call API 3.0 mode.
-- Knowledge of building/installing ESPHome firmware, Home Assistant blueprint importing, and Home Assistant configuration yamls.
-
-## Home Assistant Setup
-Due to current limitations in Home Assistant, there's a few steps you must take.
-First add [ha/input_number.yaml](ha/input_number.yaml) and [ha/input_text.yaml](ha/input_text.yaml) to your Home Assistant's `configuration.yaml` and reload your yamls. These will add the intermediary helpers used by the Blueprint and the ESPHome firmware.
-Next import the [ha/openweatherblueprint.yaml](ha/openweatherblueprint.yaml) Blueprint into Home Assistant.
-If everything is setup correctly, you should see a few entries under the Helpers tab such as `next_hour_rain_description` and `today_high_temp` which will be populated with current values.
+- [Home Assistant](https://www.home-assistant.io/) integration is now optional for controlling the device (page-switching, configuration) via the ESPHome API. **Weather is processed entirely on the device** — the firmware fetches the OpenWeatherMap One Call 3.0 API and the AirNow AQI endpoint directly from the ESP32, with no Home Assistant integration required for weather.
+- Knowledge of building/installing ESPHome firmware.
 
 ## ESPHome Transit + Weatherboard Setup
+
 Create a new firmware yaml with
 
 ```
 packages:
- transit_weatherboard: github://mixtythepuppycat/esphome-weatherboard/firmware/transit-weatherboard.yaml@main
+  transit_weatherboard: github://mixtythepuppycat/esphome-weatherboard/firmware/transit-weatherboard.yaml@main
 
 transit_tracker:
- # See https://transit-tracker.eastsideurbanism.org/configurator for configuration values 
+  See https://transit-tracker.eastsideurbanism.org/configurator for configuration values 
+  font_id: pixolletta   # forwarded to the upstream package
+
 ```
 
-Additionally add the following wifi configuration information to your `secrets.yaml`
+You may need to download and place [weather_logic.h](https://github.com/mixtythepuppycat/esphome-weatherboard/blob/master/firmware/weather_logic.h) in your firmware build directory
+
+
+Additionally add the following to your `secrets.yaml`:
 
 ```
 wifi_ssid: <YOUR_WIFI_SSID>
 wifi_password: <YOUR_WIFI_PASSWORD>
+owm_api_key: <YOUR_OPENWEATHERMAP_API_KEY>
+owm_lat: <YOUR_LATITUDE>
+owm_lon: <YOUR_LONGITUDE>
+airnow_api_key: <YOUR_AIRNOW_API_KEY>
 ```
 
-You can then switch between the weather and transit information using switches in Home Assistant.
+`owm_api_key` is your OpenWeatherMap One Call 3.0 key (free tier covers ~1000
+calls/day at the default 3-minute poll). Fetch an appid at
+[openweathermap.org](https://openweathermap.org/api/). `airnow_api_key` is
+your separate AirNow API key for AQI which you can get at [docs.airnowapi.org](https://docs.airnowapi.org/). 
+`owm_lat`/`owm_lon` are shared between the OWM and AirNow requests.
 
-## ESPHome Weatherboard Standalone Setup
-If you want to use this standalone, look at the Weatherboard section in [transit-weatherboard.yaml](firmware/transit-weatherboard.yaml) for what to add to your project.
+You can switch between the weather and transit information using the ESPHome web
+dashboard's switches (or optionally, Home Assistant entities if you connect the
+device via the ESPHome API).
